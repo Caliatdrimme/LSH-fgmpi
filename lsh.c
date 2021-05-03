@@ -1676,14 +1676,3 @@ MPI_Recv(
 
 /* to compile mpicc lsh.c -o lsh -lm */
 
-
-
-/* to compile
-mpicc lsh.c -o lsh
-to run 
-mpiexec -n  ./sigs num_elem num_sets num_hash size_hash (rest are workers)
-with fgmpi (4 workers):
-mpiexec -nfg 1 -n 22 ./sigs 5 8 4 4 
-OR
-mpiexec -nfg 22 -n 1 ./sigs 5 8 4 4
-*/
