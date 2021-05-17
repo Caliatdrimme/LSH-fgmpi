@@ -4,6 +4,18 @@ to run
 
 mpiexec -nfg n_subprocess -n n_process ./lsh [params]
 
+//ABC
+mpiexec -nfg 1 -n 12 ./lsh 1 0 0 6 3 3 1 2 1 2.0 0.1 0.1 3 data.txt
+
+//SAX
+mpiexec -nfg 1 -n 12 ./lsh 2 1 0 9 3 2 1 3 2 4.5 0.1 0.1 3 data.txt
+
+//SSH
+mpiexec -nfg 1 -n 12 ./lsh 3 2 0 9 3 3 1 2 1 2.0 0.1 0.1 3 data.txt
+
+//trial 1
+//ABC
+//read in elements index 0 to 5 inclusive
 
 //1 receiver, manager, writer, similarity, hash and storage = 6 nodes
 //num_hash hashtables
