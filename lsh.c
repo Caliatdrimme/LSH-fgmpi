@@ -131,7 +131,7 @@ void manager_fn(int elements, int num_hash, int size)
     
     printf("manager waiting\n");
 
-    MPI_Recv(&data, 1, MPI_INT, size-3, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(&data, 1, MPI_INT, size-2, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
 
     printf("manager shutting all else down\n");
@@ -217,7 +217,7 @@ void receiver_fn(int start, int elements, char *filename)
 //tag 0 is shut down
 //tag 1 is sim pair
 //tag 2 is hash bucket
-void writer_fn(int trial, int flag)
+void writer_fn(int trial, int flag, int size_hash, int num_hash)
 {
     //create results file
     FILE *fp;
@@ -250,10 +250,14 @@ void writer_fn(int trial, int flag)
     strcat(name, ".txt");
 
     fp = fopen(name, "w");
+    
+    fprintf(fp, "hash code size is %d\n", size_hash);
 
     MPI_Status status;
 
     int data;
+    
+    int done = 0;
 
     while (1)
     {
@@ -263,7 +267,9 @@ void writer_fn(int trial, int flag)
 
         if (status.MPI_TAG == 0)
         {
-            break;
+            done++;
+            if (done == num_hash+1){break;}
+            continue;
         } //if tag is 0 break
 
         else if (status.MPI_TAG == 1)
@@ -317,6 +323,8 @@ void writer_fn(int trial, int flag)
         fprintf(fp, "%s", "\n");
 
     } //while
+    
+    MPI_Send(&data, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
 
     fclose(fp);
 
@@ -353,6 +361,8 @@ float SAX_sim(int *item1, int *item2, int n, int w, int size, int rank)
 {
 
     float one = sqrt(n / w);
+    
+    //printf("n is %d and w is %d\n", n, w);
 
     //printf("one is %f\n", one);
 
@@ -376,7 +386,7 @@ float SAX_sim(int *item1, int *item2, int n, int w, int size, int rank)
 
         sum = sum + pow(dist, 2);
         
-         //printf("sum is %f\n", sum);
+        //printf("sum is %f dist is %f for symbols %d %d\n", sum, dist, ind1, ind2);
     }
 
     float two = sqrt(sum);
@@ -438,6 +448,8 @@ void similarity_fn(int flag, int elements, int num_symbols, int word_length, flo
     if (flag == 1)
     {
         elems = elements / word_length;
+        //printf("elems is %d\n", elems);
+        //printf("word length is %d\n", word_length);
 
     } //lower length of preprocessed data item if SAX
 
@@ -469,16 +481,10 @@ void similarity_fn(int flag, int elements, int num_symbols, int word_length, flo
 
         if (status.MPI_TAG == 0)
         {
-        done++;
-
-            if (done == num_hash)
-            {
-            //printf("sim shutting down\n");
-                break;
-            }
-            //printf("sim %d got shut down command %d from %d\n", rank, done, status.MPI_SOURCE);
+            done++;
+            if (done == num_hash){break;}
             continue;
-        }
+        } //if tag is 0 break
 
         int ind1, ind2, rank1, rank2;
 
@@ -551,7 +557,7 @@ void similarity_fn(int flag, int elements, int num_symbols, int word_length, flo
     
     data = 0;
     
-    MPI_Send(&data, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    MPI_Send(&data, 1, MPI_INT, size-2, 0, MPI_COMM_WORLD);
 
     //printf("similarity done\n");
 } //sim_fn
@@ -1221,7 +1227,8 @@ void hashtable_fn(int size, int size_hash, int rank, int flag, int num_workers)
             MPI_Send(&data, 1, MPI_INT, size-2, 2, MPI_COMM_WORLD);
         }
     }
-    //printf("hashtable %d sending done command to sim\n", rank);
+    //printf("hashtable %d sending done command to writer\n", rank);
+    MPI_Send(&rank, 1, MPI_INT, size-2, 0, MPI_COMM_WORLD);
     MPI_Send(&rank, 1, MPI_INT, size-3, 0, MPI_COMM_WORLD);
 
     //get manager message to hashtables that we are done
@@ -1979,7 +1986,7 @@ int my_main(int argc, char **argv)
     }
     else if (rank == size - 2)
     {
-        writer_fn(trial, flag);
+        writer_fn(trial, flag, size_hash, num_hash);
     }
     else if (rank == size - 3)
     {
