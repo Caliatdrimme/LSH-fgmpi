@@ -1,0 +1,9 @@
+bucket 3 10 1 3
+bucket 3 0 2
+bucket 1 0 1 3
+bucket 2 0 1 3
+bucket 2 11 2
+bucket 1 1 2
+sim 1 3 7.715611
+sim 1 3 7.715611
+sim 1 3 7.715611
