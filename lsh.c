@@ -12,9 +12,14 @@ UBC
 #include <time.h>
 #include <math.h>
 #include <stdarg.h>
+#include <unistd.h>
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
+
+#define RANK_MAIN_PROCESS 0
+#define CMD_START 1
+#define CMD_STOP 2
 
 struct Config {
 
@@ -2089,6 +2094,61 @@ void print_config(struct Config config) {
 	printf("14. filename: %s\n", config.filename);
 }
 
+void worker_fn2(struct Config config) {
+
+	int cmd;
+
+	int running = 1;
+
+	while (running) {
+		MPI_Recv(&cmd, 1, MPI_INT, RANK_MAIN_PROCESS, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+		switch(cmd) {
+
+		case 1:
+				my_log(config, "Cmd start");
+				break;
+		case 2:
+				my_log(config, "Cmd stop");
+				running = 0;
+				break;
+
+		}
+
+	}
+
+
+}
+
+void main_process_fn(struct Config config) {
+
+	my_log(config, "Cluster size: %d", config.cluster_size);
+	printf("config: \n");
+	print_config(config);
+
+	int cmd_start = 1;
+	int cmd_stop = 2;
+
+	for (int i=1; i<config.cluster_size; i++) {
+		MPI_Send(&cmd_start, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
+	}
+
+	usleep(10*1000*1000);
+
+	for (int i=1; i<config.cluster_size; i++) {
+		MPI_Send(&cmd_stop, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
+	}
+
+	/*
+	    if (read_file(config)!=0) {
+	        MPI_Finalize();
+	        return 1;
+	    }
+	*/
+
+
+}
+
 int main(int argc, char **argv) {
 
     //initialize
@@ -2109,19 +2169,19 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
+	// fill the config struct with the values from the command line
 	init_config(&config, argv);
 
     my_log(config, "Start");
 
-    if (config.rank==0) {
-    	my_log(config, "Cluster size: %d", config.cluster_size);
-    	printf("config: \n");
-    	print_config(config);
-    }
+    switch (config.rank) {
+    	case RANK_MAIN_PROCESS:
+    		main_process_fn(config);
+    		break;
 
-    if (read_file(config)!=0) {
-        MPI_Finalize();
-        return 1;
+    	default:
+    		worker_fn2(config);
+    		break;
     }
 
     MPI_Finalize();
