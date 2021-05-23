@@ -11,6 +11,8 @@ import os
 import math
 import datetime
 
+import time
+
 #ABC
 #os.system("mpiexec -nfg 1 -n 12 ./lsh 1 0 0 6 3 3 1 2 1 2.0 0.1 0.1 3 data.txt")
 
@@ -99,7 +101,17 @@ for i in range(0,3):
     print(command)
     #start timer
     #start = datetime.datetime.now()
-    os.system(command)
+
+    t0 = time.time_ns() // 1_000_000 
+
+    #os.system(command)
+
+    os.system("sleep 10")
+
+    t1 = time.time_ns() // 1_000_000 
+
+    print("dt: "+str(t1-t0))
+
     #end timer
     #end = datetime.datetime.now()
     #dif = end - start

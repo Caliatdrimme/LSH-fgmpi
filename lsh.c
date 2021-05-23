@@ -11,14 +11,54 @@ UBC
 #include <string.h>
 #include <time.h>
 #include <math.h>
+#include <stdarg.h>
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
+struct Config {
+
+	int rank;
+	int cluster_size;
+
+    int trial;
+
+    int flag, start, elements;
+    int num_hash, size_hash, step_hash;
+    int num_symbols, word_length;
+    float average, sd, sim;
+
+    int n;
+
+    char* filename;
+
+};
+
+void my_log(struct Config config, char* s, ...) {
+
+	char buff[100];
+	time_t now = time (0);
+	strftime (buff, 100, "%H:%M:%S", localtime (&now));
+
+	printf("%d | %s | ", config.rank, buff);
+
+	// magic
+	va_list argptr;
+	va_start(argptr, s);
+	vfprintf(stdout, s, argptr);
+	va_end(argptr);
+
+	printf ("\n");
+}
+
 
 /******* FG-MPI Boilerplate begin *********/
+/*
 #include "fgmpi.h"
-int my_main(int argc, char **argv); /*forward declaration*/
+int my_main(int argc, char **argv);
+
+int my_main2(int argc, char **argv);
+
 FG_ProcessPtr_t binding_func(int argc, char **argv, int rank)
 {
     return (&my_main);
@@ -27,11 +67,15 @@ FG_MapPtr_t map_lookup(int argc, char **argv, char *str)
 {
     return (&binding_func);
 }
+
 int main(int argc, char *argv[])
 {
     FGmpiexec(&argc, &argv, &map_lookup);
     return (0);
 }
+
+*/
+
 /******* FG-MPI Boilerplate end *********/
 
 /******* MANAGER *********/
@@ -151,6 +195,50 @@ void manager_fn(int elements, int num_hash, int size)
     //printf("manager done\n");
 
 } //manager_fn
+
+int read_file(struct Config config) {
+	float data[1000000];
+	int len=0;
+
+    FILE *fp;
+    fp = fopen(config.filename, "r");
+
+    if (fp==NULL) {
+    	my_log(config, "Cannot open file %s", config.filename);
+    	return 1;
+    }
+
+    char str[100000];
+
+    int line=0;
+
+    while (fgets(str, sizeof(str), fp))
+    {
+
+        //int count = 0;
+
+        //printf("line read as string %d\n", line);
+        line ++;
+
+        char *ptr = str, *eptr;
+
+        // if strtof cannot parse a float, eptr will be equal to ptr. We assume it will happen only at the end of the line
+        float f = strtof(ptr, &eptr);
+
+        while (ptr != eptr) {
+
+           data[len] = f;
+
+            len++;
+
+            ptr = eptr;
+            f = strtof(ptr, &eptr);
+        }
+    }
+
+    return 0;
+}
+
 
 /******* RECEIVER *********/
 //streams data from file element by element to manager
@@ -329,7 +417,7 @@ void writer_fn(int trial, int flag, int size_hash, int num_hash)
         {
         
         //printf("else if clause\n");
-            int ind, size, elem;
+            int ind, elem;
 
             fprintf(fp, "bucket ");
             //printf("receiving bucket\n");
@@ -523,7 +611,7 @@ void similarity_fn(int flag, int elements, int num_symbols, int word_length, flo
             continue;
         } //if tag is 0 break
 
-        int ind1, ind2, rank1, rank2;
+        int ind1, ind2;
 
         //save first index
         ind1 = data;
@@ -839,7 +927,7 @@ void hash_fn_SAX(int elements, int num_hash, int num_symbols, int word_length, i
 
     float *distances = create_distances(num_symbols, breakpoints);
 
-    int data, dest;
+    int dest;
 
     MPI_Status status;
 
@@ -885,7 +973,7 @@ void hash_fn_SAX(int elements, int num_hash, int num_symbols, int word_length, i
 
         else if (status.MPI_TAG == 7)
         {
-            int s1, s2;
+            int s2;
                
             //MPI_Recv(&s1, 1, MPI_INT, MPI_ANY_SOURCE, 7, MPI_COMM_WORLD, &status);
             MPI_Recv(&s2, 1, MPI_INT, status.MPI_SOURCE, 7, MPI_COMM_WORLD, &status);
@@ -1031,7 +1119,7 @@ struct Hashtable append_to_table(struct Hashtable table, int hash, int item, int
 
         table.codes[ind] = hash;
 
-    int c = table.counts[ind];
+    //int c = table.counts[ind];
     //printf("index %d and count %d\n", ind, c);
 
         int s = 0;
@@ -1112,7 +1200,7 @@ void hashtable_fn(int size, int size_hash, int rank, int flag, int num_workers, 
     //printf("hashtable %d starting\n", rank);
     int data;
     int item;
-    int count;
+    //int count;
 
     int *hash;
     hash = (int *)malloc(sizeof(int) * size_hash);
@@ -1142,7 +1230,7 @@ void hashtable_fn(int size, int size_hash, int rank, int flag, int num_workers, 
 
     int t;
 
-    int added = 0;
+    //int added;
 
     while (1)
     {
@@ -1162,7 +1250,7 @@ void hashtable_fn(int size, int size_hash, int rank, int flag, int num_workers, 
             continue;
         }
 
-        added = 1;
+        //added = 1;
 
         item = data;
 
@@ -1544,7 +1632,7 @@ int *preprocess_SAX(float *item, int elements, int num_symbols, int size, int ra
     float *breakpoints;
     breakpoints = (float *)malloc(sizeof(float) * num_symbols - 1);
 
-    int data = 1;
+    //int data = 1;
 
     MPI_Send(&rank, 1, MPI_INT, size - 4, 6, MPI_COMM_WORLD);
 
@@ -1896,7 +1984,7 @@ void worker_fn(int rank, int flag, int size_hash, int step_hash, int num_symbols
 
         else
         {
-            int data = 1;
+            //int data = 1;
 
             for (int j = 1; j <= num_hash; j++)
             {
@@ -1960,6 +2048,89 @@ void worker_fn(int rank, int flag, int size_hash, int step_hash, int num_symbols
 
 } //worker
 
+void init_config(struct Config *config, char **argv) {
+	config->trial = atoi(argv[1]);
+
+	config->flag = atoi(argv[2]);
+
+	config->start = atoi(argv[3]);
+	config->elements = atoi(argv[4]);
+
+	config->num_hash = atoi(argv[5]);
+	config->size_hash = atoi(argv[6]);
+	config->step_hash = atoi(argv[7]);
+
+	config->num_symbols = atoi(argv[8]);
+	config->word_length = atoi(argv[9]);
+
+	config->average = atof(argv[10]);
+	config->sd = atof(argv[11]);
+	config->sim = atof(argv[12]);
+
+	config->n = atoi(argv[13]);
+
+	config->filename = argv[14];
+}
+
+void print_config(struct Config config) {
+	printf("1.  trial: %d\n", config.trial);
+	printf("2.  flag: %d\n", config.flag);
+	printf("3.  start: %d\n", config.start);
+	printf("4.  elements: %d\n", config.elements);
+	printf("5.  num_hash: %d\n", config.num_hash);
+	printf("6.  size_hash: %d\n", config.size_hash);
+	printf("7.  step_hash: %d\n", config.step_hash);
+	printf("8.  num_symbols: %d\n", config.num_symbols);
+	printf("9.  word_length: %d\n", config.word_length);
+	printf("10. average: %f\n", config.average);
+	printf("11. sd: %f\n", config.sd);
+	printf("12. sim: %f\n", config.sim);
+	printf("13. n: %d\n", config.n);
+	printf("14. filename: %s\n", config.filename);
+}
+
+int main(int argc, char **argv) {
+
+    //initialize
+    MPI_Init(&argc, &argv);
+
+    struct Config config;
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &config.rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &config.cluster_size);
+
+	if (argc<14) {
+		if (config.rank==0) {
+			printf("Required parameters(14): trial flag start elements num_hash size_hash step_hash num_symbols word_length average sd sim n filename\n");
+			printf("Example: 1 0 0 6 3 3 1 2 1 2.0 0.1 0.1 3 data.txt\n");
+		}
+
+		MPI_Finalize();
+		return 1;
+	}
+
+	init_config(&config, argv);
+
+    my_log(config, "Start");
+
+    if (config.rank==0) {
+    	my_log(config, "Cluster size: %d", config.cluster_size);
+    	printf("config: \n");
+    	print_config(config);
+    }
+
+    if (read_file(config)!=0) {
+        MPI_Finalize();
+        return 1;
+    }
+
+    MPI_Finalize();
+
+    my_log(config, "Stop");
+
+    return 0;
+}
+
 /******* MAIN *********/
 //this represents one whole run of an experiment
 //each parameter array starts with what experiment trial this is , n total of data items 13 and str filename 14
@@ -1989,7 +2160,7 @@ int my_main(int argc, char **argv)
     float average, sd, sim;
 
     int n;
-    char filename[10000];
+    //char filename[10000];
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
