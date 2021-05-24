@@ -21,6 +21,13 @@ UBC
 #define CMD_START 1
 #define CMD_STOP 2
 
+struct file_data_t {
+	int len;
+	int column_count;
+	int line_count;
+	float *data;
+};
+
 struct Config {
 
 	int rank;
@@ -37,15 +44,16 @@ struct Config {
 
     char* filename;
 
+    struct file_data_t file_data;
 };
 
-void my_log(struct Config config, char* s, ...) {
+void my_log(struct Config *config, char* s, ...) {
 
 	char buff[100];
 	time_t now = time (0);
 	strftime (buff, 100, "%H:%M:%S", localtime (&now));
 
-	printf("%d | %s | ", config.rank, buff);
+	printf("%d | %s | ", config->rank, buff);
 
 	// magic
 	va_list argptr;
@@ -201,47 +209,62 @@ void manager_fn(int elements, int num_hash, int size)
 
 } //manager_fn
 
-int read_file(struct Config config) {
-	float data[1000000];
-	int len=0;
+
+void read_file(struct Config *config) {
+
+	// the file is a matrix WxH of floats separated by space characters. We assume the file is always valid, i.e.
+	// all the characters are valid floats, spaces, or new line
 
     FILE *fp;
-    fp = fopen(config.filename, "r");
+    fp = fopen(config->filename, "r");
 
     if (fp==NULL) {
-    	my_log(config, "Cannot open file %s", config.filename);
-    	return 1;
+    	my_log(config, "Cannot open file %s", config->filename);
+    	return;
     }
+
+	config->file_data.data = (float*)malloc(100000*sizeof(float));
+	int len=0;
 
     char str[100000];
 
     int line=0;
 
+    int column_count;
+
     while (fgets(str, sizeof(str), fp))
     {
-
-        //int count = 0;
-
-        //printf("line read as string %d\n", line);
-        line ++;
 
         char *ptr = str, *eptr;
 
         // if strtof cannot parse a float, eptr will be equal to ptr. We assume it will happen only at the end of the line
         float f = strtof(ptr, &eptr);
 
+        if (ptr == eptr) {
+        	// we could not parse even a single float from the line, which means the line is empty. Assume it's the last line
+        	break;
+        }
+
+        line ++;
+
+        column_count = 0;
+
         while (ptr != eptr) {
 
-           data[len] = f;
+           column_count++;
 
-            len++;
+           config->file_data.data[len] = f;
 
-            ptr = eptr;
-            f = strtof(ptr, &eptr);
+           len++;
+
+           ptr = eptr;
+           f = strtof(ptr, &eptr);
         }
     }
 
-    return 0;
+    my_log(config, "Read file: len: %d line count: %d column count: %d", len, line, column_count);
+
+    return;
 }
 
 
@@ -2077,38 +2100,33 @@ void init_config(struct Config *config, char **argv) {
 	config->filename = argv[14];
 }
 
-void print_config(struct Config config) {
-	printf("1.  trial: %d\n", config.trial);
-	printf("2.  flag: %d\n", config.flag);
-	printf("3.  start: %d\n", config.start);
-	printf("4.  elements: %d\n", config.elements);
-	printf("5.  num_hash: %d\n", config.num_hash);
-	printf("6.  size_hash: %d\n", config.size_hash);
-	printf("7.  step_hash: %d\n", config.step_hash);
-	printf("8.  num_symbols: %d\n", config.num_symbols);
-	printf("9.  word_length: %d\n", config.word_length);
-	printf("10. average: %f\n", config.average);
-	printf("11. sd: %f\n", config.sd);
-	printf("12. sim: %f\n", config.sim);
-	printf("13. n: %d\n", config.n);
-	printf("14. filename: %s\n", config.filename);
+void print_config(struct Config *config) {
+	printf("1.  trial: %d\n", config->trial);
+	printf("2.  flag: %d\n", config->flag);
+	printf("3.  start: %d\n", config->start);
+	printf("4.  elements: %d\n", config->elements);
+	printf("5.  num_hash: %d\n", config->num_hash);
+	printf("6.  size_hash: %d\n", config->size_hash);
+	printf("7.  step_hash: %d\n", config->step_hash);
+	printf("8.  num_symbols: %d\n", config->num_symbols);
+	printf("9.  word_length: %d\n", config->word_length);
+	printf("10. average: %f\n", config->average);
+	printf("11. sd: %f\n", config->sd);
+	printf("12. sim: %f\n", config->sim);
+	printf("13. n: %d\n", config->n);
+	printf("14. filename: %s\n", config->filename);
 }
 
-void worker_fn2(struct Config config) {
-
-	int cmd;
+void worker_fn2(struct Config *config) {
 
 	int running = 1;
 
 	while (running) {
-		MPI_Recv(&cmd, 1, MPI_INT, RANK_MAIN_PROCESS, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		int cmd = MPI_Recv(&cmd, 1, MPI_INT, RANK_MAIN_PROCESS, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
 		switch(cmd) {
 
-		case 1:
-				my_log(config, "Cmd start");
-				break;
-		case 2:
+		case CMD_STOP:
 				my_log(config, "Cmd stop");
 				running = 0;
 				break;
@@ -2120,31 +2138,29 @@ void worker_fn2(struct Config config) {
 
 }
 
-void main_process_fn(struct Config config) {
+void stopAll(struct Config *config) {
+	for (int i=1; i<config->cluster_size; i++) {
+		MPI_Send(NULL, 0, MPI_INT, i, CMD_STOP, MPI_COMM_WORLD);
+	}
+}
 
-	my_log(config, "Cluster size: %d", config.cluster_size);
+void main_process_fn(struct Config *config) {
+
+	my_log(config, "Cluster size: %d", config->cluster_size);
 	printf("config: \n");
 	print_config(config);
 
-	int cmd_start = 1;
-	int cmd_stop = 2;
+	read_file(config);
 
-	for (int i=1; i<config.cluster_size; i++) {
-		MPI_Send(&cmd_start, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
-	}
+    if (config->file_data.data == NULL) {
+    	stopAll(config);
+        MPI_Finalize();
+        return;
+    }
 
-	usleep(10*1000*1000);
+	usleep(11*1000*1000);
 
-	for (int i=1; i<config.cluster_size; i++) {
-		MPI_Send(&cmd_stop, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
-	}
-
-	/*
-	    if (read_file(config)!=0) {
-	        MPI_Finalize();
-	        return 1;
-	    }
-	*/
+	stopAll(config);
 
 
 }
@@ -2172,21 +2188,21 @@ int main(int argc, char **argv) {
 	// fill the config struct with the values from the command line
 	init_config(&config, argv);
 
-    my_log(config, "Start");
+    my_log(&config, "Start");
 
     switch (config.rank) {
     	case RANK_MAIN_PROCESS:
-    		main_process_fn(config);
+    		main_process_fn(&config);
     		break;
 
     	default:
-    		worker_fn2(config);
+    		worker_fn2(&config);
     		break;
     }
 
     MPI_Finalize();
 
-    my_log(config, "Stop");
+    my_log(&config, "Stop");
 
     return 0;
 }
