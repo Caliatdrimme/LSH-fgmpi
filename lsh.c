@@ -259,9 +259,13 @@ void writer_fn(int trial, int flag, int size_hash, int num_hash)
     //create results file
     FILE *fp;
 
-    char name[10];
+    char name[200];
 
     char append[2];
+    
+    name[0]=0;
+
+    strcat(name, "results/");
 
     if (flag == 0)
     {
@@ -285,6 +289,8 @@ void writer_fn(int trial, int flag, int size_hash, int num_hash)
     strcat(name, append);
 
     strcat(name, ".txt");
+
+    printf("%s\n",name);
 
     fp = fopen(name, "w");
     
