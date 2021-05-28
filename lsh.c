@@ -17,6 +17,7 @@ UBC
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
+/*
 #define RANK_MAIN_PROCESS 0
 #define CMD_START 1
 #define CMD_STOP 2
@@ -63,7 +64,7 @@ void my_log(struct Config *config, char* s, ...) {
 
 	printf ("\n");
 }
-
+*/
 
 /******* FG-MPI Boilerplate begin *********/
 /*
@@ -209,63 +210,6 @@ void manager_fn(int elements, int num_hash, int size)
 
 } //manager_fn
 
-
-void read_file(struct Config *config) {
-
-	// the file is a matrix WxH of floats separated by space characters. We assume the file is always valid, i.e.
-	// all the characters are valid floats, spaces, or new line
-
-    FILE *fp;
-    fp = fopen(config->filename, "r");
-
-    if (fp==NULL) {
-    	my_log(config, "Cannot open file %s", config->filename);
-    	return;
-    }
-
-	config->file_data.data = (float*)malloc(100000*sizeof(float));
-	int len=0;
-
-    char str[100000];
-
-    int line=0;
-
-    int column_count;
-
-    while (fgets(str, sizeof(str), fp))
-    {
-
-        char *ptr = str, *eptr;
-
-        // if strtof cannot parse a float, eptr will be equal to ptr. We assume it will happen only at the end of the line
-        float f = strtof(ptr, &eptr);
-
-        if (ptr == eptr) {
-        	// we could not parse even a single float from the line, which means the line is empty. Assume it's the last line
-        	break;
-        }
-
-        line ++;
-
-        column_count = 0;
-
-        while (ptr != eptr) {
-
-           column_count++;
-
-           config->file_data.data[len] = f;
-
-           len++;
-
-           ptr = eptr;
-           f = strtof(ptr, &eptr);
-        }
-    }
-
-    my_log(config, "Read file: len: %d line count: %d column count: %d", len, line, column_count);
-
-    return;
-}
 
 
 /******* RECEIVER *********/
@@ -717,6 +661,7 @@ void similarity_fn(int flag, int elements, int num_symbols, int word_length, flo
 
 /******* HASH *********/
 
+/*
 int cmpfunc(const void *a, const void *b)
 {
     return (*(int *)a - *(int *)b);
@@ -869,6 +814,8 @@ float *create_distances(int num_symbols, float *breakpoints)
     return distances;
 
 } //create_distances
+
+*/
 
 //creates the hash functions
 //use tag 4 for hash function
@@ -1066,6 +1013,7 @@ void hash_fn_ABC(int elements, int num_hash, int size_hash)
     //printf("ABC hash done\n");
 
 } //hash ABC
+
 
 /******* HASH TABLES *********/
 
@@ -2076,136 +2024,7 @@ void worker_fn(int rank, int flag, int size_hash, int step_hash, int num_symbols
 
 } //worker
 
-void init_config(struct Config *config, char **argv) {
-	config->trial = atoi(argv[1]);
 
-	config->flag = atoi(argv[2]);
-
-	config->start = atoi(argv[3]);
-	config->elements = atoi(argv[4]);
-
-	config->num_hash = atoi(argv[5]);
-	config->size_hash = atoi(argv[6]);
-	config->step_hash = atoi(argv[7]);
-
-	config->num_symbols = atoi(argv[8]);
-	config->word_length = atoi(argv[9]);
-
-	config->average = atof(argv[10]);
-	config->sd = atof(argv[11]);
-	config->sim = atof(argv[12]);
-
-	config->n = atoi(argv[13]);
-
-	config->filename = argv[14];
-}
-
-void print_config(struct Config *config) {
-	printf("1.  trial: %d\n", config->trial);
-	printf("2.  flag: %d\n", config->flag);
-	printf("3.  start: %d\n", config->start);
-	printf("4.  elements: %d\n", config->elements);
-	printf("5.  num_hash: %d\n", config->num_hash);
-	printf("6.  size_hash: %d\n", config->size_hash);
-	printf("7.  step_hash: %d\n", config->step_hash);
-	printf("8.  num_symbols: %d\n", config->num_symbols);
-	printf("9.  word_length: %d\n", config->word_length);
-	printf("10. average: %f\n", config->average);
-	printf("11. sd: %f\n", config->sd);
-	printf("12. sim: %f\n", config->sim);
-	printf("13. n: %d\n", config->n);
-	printf("14. filename: %s\n", config->filename);
-}
-
-void worker_fn2(struct Config *config) {
-
-	int running = 1;
-
-	while (running) {
-		int cmd = MPI_Recv(&cmd, 1, MPI_INT, RANK_MAIN_PROCESS, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-		switch(cmd) {
-
-		case CMD_STOP:
-				my_log(config, "Cmd stop");
-				running = 0;
-				break;
-
-		}
-
-	}
-
-
-}
-
-void stopAll(struct Config *config) {
-	for (int i=1; i<config->cluster_size; i++) {
-		MPI_Send(NULL, 0, MPI_INT, i, CMD_STOP, MPI_COMM_WORLD);
-	}
-}
-
-void main_process_fn(struct Config *config) {
-
-	my_log(config, "Cluster size: %d", config->cluster_size);
-	printf("config: \n");
-	print_config(config);
-
-	read_file(config);
-
-    if (config->file_data.data == NULL) {
-    	stopAll(config);
-        MPI_Finalize();
-        return;
-    }
-
-	usleep(11*1000*1000);
-
-	stopAll(config);
-
-
-}
-
-int main(int argc, char **argv) {
-
-    //initialize
-    MPI_Init(&argc, &argv);
-
-    struct Config config;
-
-    MPI_Comm_rank(MPI_COMM_WORLD, &config.rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &config.cluster_size);
-
-	if (argc<14) {
-		if (config.rank==0) {
-			printf("Required parameters(14): trial flag start elements num_hash size_hash step_hash num_symbols word_length average sd sim n filename\n");
-			printf("Example: 1 0 0 6 3 3 1 2 1 2.0 0.1 0.1 3 data.txt\n");
-		}
-
-		MPI_Finalize();
-		return 1;
-	}
-
-	// fill the config struct with the values from the command line
-	init_config(&config, argv);
-
-    my_log(&config, "Start");
-
-    switch (config.rank) {
-    	case RANK_MAIN_PROCESS:
-    		main_process_fn(&config);
-    		break;
-
-    	default:
-    		worker_fn2(&config);
-    		break;
-    }
-
-    MPI_Finalize();
-
-    my_log(&config, "Stop");
-
-    return 0;
-}
 
 /******* MAIN *********/
 //this represents one whole run of an experiment
