@@ -11,15 +11,25 @@
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 #define RANK_MAIN_PROCESS 0
+#define RANK_STORAGE 1
+#define RANK_SIMILARITY 2
+#define RANK_HASH_TABLE 3
+
 #define CMD_START 1
 #define CMD_STOP 2
 #define CMD_CONFIG_HASH 3
+#define CMD_WORKER_DATA 4
+#define CMD_WORKER_AVAILABLE 5
+#define CMD_ABC_STORE 6
+
 
 #define METHOD_ABC 0
 #define METHOD_SAX 1
 #define METHOD_SSH 2
 
+#define LOG_LEVEL_DEBUG 0
 
+#define LOG_LEVEL LOG_LEVEL_DEBUG
 
 struct file_data_t {
 	int len;
@@ -80,6 +90,7 @@ void my_log(struct Config *config, char* s, ...) {
 	va_end(argptr);
 
 	printf ("\n");
+	fflush(stdout);
 }
 
 void logHash(struct Config *config) {
@@ -124,17 +135,12 @@ void init_config(struct Config *config, char **argv) {
 	config->filename = argv[14];
 
 	config->rank_worker_start=1;
-	config->worker_count=1;
+	config->worker_count=0;
 
-	switch (config->rank) {
-		case RANK_MAIN_PROCESS:
-			config->process_name = "Main";
+	config->process_name = malloc(100 * sizeof(char));
 
-		default:
-			if (config->rank==1) {
-				config->process_name = "Worker";
-			}
-	}
+	config->process_name[0] = 0;
+
 }
 
 void print_config(struct Config *config) {
@@ -170,6 +176,34 @@ void process_data_window(struct Config *config) {
 	}
 }
 
+char *preprocess_ABC(float *item, int elements, float average)
+{
+
+    char *data;
+    data = (char *)malloc(sizeof(char) * elements);
+
+    for (int i = 0; i < elements; i++)
+    {
+
+        if (item[i] >= average)
+        {
+            data[i] = 1;
+        }
+        else
+        {
+            data[i] = 0;
+        }
+    }
+
+    return data;
+} //preprocess_ABC
+
+
+struct ABC_data_t {
+	int line_index;
+	int *data;
+};
+
 void worker_fn2(struct Config *config) {
 
 	my_log(config, "worker_fn2");
@@ -177,6 +211,8 @@ void worker_fn2(struct Config *config) {
 	int running = 1;
 
 	int cmd;
+
+    int cmd_worker_available = CMD_WORKER_AVAILABLE;
 
 	while (running) {
 		my_log(config, "Receiving...");
@@ -194,7 +230,37 @@ void worker_fn2(struct Config *config) {
 				config->hash = malloc(config->num_hash*sizeof(int));
 			    MPI_Recv(config->hash, config->num_hash, MPI_INT, RANK_MAIN_PROCESS, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 			    logHash(config);
+
+			    MPI_Send(&cmd_worker_available, 1, MPI_INT, RANK_MAIN_PROCESS, 0, MPI_COMM_WORLD);
 			    break;
+
+		case CMD_WORKER_DATA:
+
+				my_log(config, "Cmd worker data");
+				float *data = (float *)malloc(config->elements * sizeof(float));
+
+		        MPI_Recv(data, config->elements, MPI_FLOAT, RANK_MAIN_PROCESS, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+		        if (LOG_LEVEL == LOG_LEVEL_DEBUG) {
+		        	my_log(config, "Data");
+		        	for (int i=0; i<config->elements; i++) {
+		        		printf("%f ", data[i]);
+		        	}
+		        	printf("\n");
+		        }
+
+		        //struct ABC_data_t abc_data;
+		        //abc_data.line_index
+
+		        preprocess_ABC(data, config->elements, config->average);
+
+		        int cmd_abc_store = &CMD_ABC_STORE;
+
+		        MPI_Send(&cmd_abc_store, 1, MPI_INT, RANK_STORAGE, 0, MPI_COMM_WORLD);
+
+
+		    	MPI_Send(&cmd_worker_available, 1, MPI_INT, RANK_MAIN_PROCESS, 0, MPI_COMM_WORLD);
+				break;
 
 		default:
 			my_log(config, "Unknown command: %d", cmd);
@@ -434,6 +500,52 @@ float *create_distances(int num_symbols, float *breakpoints)
 //************************************//
 
 
+void main_process_method_abc(struct Config *config) {
+	my_log(config, "METHOD_ABC");
+
+	config->hash = random_indexes(config->num_hash, config->elements, config->size_hash);
+
+	logHash(config);
+
+    int cmd_config_hash = CMD_CONFIG_HASH;
+
+    for (int i=0; i<config->worker_count; i++) {
+	    MPI_Send(&cmd_config_hash, 1, MPI_INT, config->rank_worker_start+i, 0, MPI_COMM_WORLD);
+    	MPI_Send(config->hash, config->num_hash, MPI_INT, config->rank_worker_start+i, 0, MPI_COMM_WORLD);
+    }
+
+    int cmd_worker_data = CMD_WORKER_DATA;
+
+    int line_index = 0;
+
+    while (line_index < config->file_data.line_count) {
+
+    	int cmd;
+    	MPI_Status mpi_status;
+
+    	my_log(config, "Waiting for a worker");
+
+    	MPI_Recv(&cmd, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &mpi_status);
+
+    	if (cmd != CMD_WORKER_AVAILABLE) {
+    		my_log(config, "Unexpected command: %d", cmd);
+    	}
+
+    	my_log(config, "Worker available: %d for line: %d", mpi_status.MPI_SOURCE, line_index);
+
+	    MPI_Send(&cmd_worker_data, 1, MPI_INT, mpi_status.MPI_SOURCE, 0, MPI_COMM_WORLD);
+
+	    float *data = &config->file_data.data[line_index*config->file_data.column_count + config->start];
+
+	    MPI_Send(data, config->elements, MPI_FLOAT, mpi_status.MPI_SOURCE, 0, MPI_COMM_WORLD);
+
+	    line_index++;
+
+    }
+
+
+}
+
 void main_process_fn(struct Config *config) {
 
 	my_log(config, "Cluster size: %d", config->cluster_size);
@@ -449,20 +561,7 @@ void main_process_fn(struct Config *config) {
 
     switch (config->flag) {
     	case METHOD_ABC:
-
-    		my_log(config, "METHOD_ABC");
-
-    		config->hash = random_indexes(config->num_hash, config->elements, config->size_hash);
-
-    		logHash(config);
-
-		    int cmd_config_hash=CMD_CONFIG_HASH;
-
-		    for (int i=0; i<config->worker_count; i++) {
-			    MPI_Send(&cmd_config_hash, 1, MPI_INT, config->rank_worker_start+i, 0, MPI_COMM_WORLD);
-		    	MPI_Send(config->hash, config->num_hash, MPI_INT, config->rank_worker_start+i, 0, MPI_COMM_WORLD);
-		    }
-
+    		main_process_method_abc(config);
     		break;
 
  /*   	case 1:
@@ -525,15 +624,52 @@ int main(int argc, char **argv) {
 	// fill the config struct with the values from the command line
 	init_config(&config, argv);
 
+	int min_cluster_size = 3+config.num_hash+1;
+
+	if (config.cluster_size<min_cluster_size) {
+		if (config.rank==0) {
+			printf("This program requires at least %d processes\n", min_cluster_size);
+		}
+		//return 1;
+	}
+
     my_log(&config, "Start");
+
+	config.rank_worker_start = RANK_HASH_TABLE + config.num_hash;
+	config.worker_count = config.cluster_size - config.rank_worker_start;
 
     switch (config.rank) {
     	case RANK_MAIN_PROCESS:
+    		config.process_name = "Main";
+
+    		my_log(&config, "Worker start rank: %d worker count: %d", config.rank_worker_start,config.worker_count );
+
     		main_process_fn(&config);
     		break;
 
+    	case RANK_STORAGE:
+    		config.process_name = "Storage";
+    		break;
+
+    	case RANK_SIMILARITY:
+    		config.process_name = "Similarity";
+    		break;
+
     	default:
-    		worker_fn2(&config);
+
+    		if (config.rank>=RANK_HASH_TABLE && config.rank<RANK_HASH_TABLE+config.num_hash) {
+    			int hash_table_index = config.rank - RANK_HASH_TABLE;
+    			sprintf(config.process_name, "Hash table %d", hash_table_index);
+    			// do hash table
+    		}
+    		else {
+
+    			int worker_index = config.rank - config.rank_worker_start;
+    			sprintf(config.process_name, "Worker %d", worker_index);
+
+    			worker_fn2(&config);
+    		}
+
     		break;
     }
 

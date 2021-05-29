@@ -821,6 +821,7 @@ float *create_distances(int num_symbols, float *breakpoints)
 //use tag 4 for hash function
 //tag 0 is shut down
 //tag 6 for permutations
+/*
 void hash_fn_SSH(int num_hash, int size_hash, int num_symbols)
 {
 
@@ -876,7 +877,7 @@ void hash_fn_SSH(int num_hash, int size_hash, int num_symbols)
                     //printf("sending to %d\n", dest);
                     
                     }
-                //*(perm + i*num_hash + j)) j til l
+                // *(perm + i*num_hash + j)) j til l
             } //for sending hash permutations
         }
 
@@ -954,7 +955,7 @@ void hash_fn_SAX(int elements, int num_hash, int num_symbols, int word_length, i
             MPI_Recv(&s2, 1, MPI_INT, status.MPI_SOURCE, 7, MPI_COMM_WORLD, &status);
 
             MPI_Send(&*(distances + dest * num_symbols + s2), 1, MPI_FLOAT, status.MPI_SOURCE, 7, MPI_COMM_WORLD);
-            //*(distances + i*num_symbols + j); this works for print i row j column both num_symbols
+            // *(distances + i*num_symbols + j); this works for print i row j column both num_symbols
 
         } //else for tag 7 distances
 
@@ -1015,7 +1016,7 @@ void hash_fn_ABC(int elements, int num_hash, int size_hash)
 } //hash ABC
 
 
-/******* HASH TABLES *********/
+// Hash tables
 
 //int n is total number of hash codes with their buckets stored so far
 //counts 1d int array of size n
@@ -1109,7 +1110,7 @@ struct Hashtable append_to_table(struct Hashtable table, int hash, int item, int
         table.items = resize_table(table.items, s);
 
         table.c = s;
-        //*(table.items + s) = item;
+        // *(table.items + s) = item;
         //printf("hashtable inserted item %d\n", item);
         // printf("but not here\n");
     } //if didnt find it need to resize
@@ -1326,7 +1327,7 @@ void hashtable_fn(int size, int size_hash, int rank, int flag, int num_workers, 
         {
             int data = table.items[t+j];
             
-            //*(table.items + i * t + j);
+            // *(table.items + i * t + j);
             MPI_Send(&data, 1, MPI_INT, size-2, 2, MPI_COMM_WORLD);
         }
     }
@@ -1350,7 +1351,7 @@ void hashtable_fn(int size, int size_hash, int rank, int flag, int num_workers, 
 
 } //hashtable fn
 
-/*************STORAGE*****************/
+// STORAGE
 void storage_fn(int n, int elements)
 {
 
@@ -1359,22 +1360,20 @@ void storage_fn(int n, int elements)
     int *table = (int *)malloc(n * elements * sizeof(int));
     int index;
 
-    /*
-    for (int i =0; i < elements; i++){
-        *(table + (ind1-1)*elements + i) = data1[i];
+//    for (int i =0; i < elements; i++){
+//        *(table + (ind1-1)*elements + i) = data1[i];
+//
+//    }
+//
+//    for (int i = 0; i < n; i++)
+//        for (int j = 0; j < elements; j++){
+//
+//            printf("item saved at index %d %d is %f\n", i, j, *(table + j + i*elements));
+//        }
+//
+//
+//    }
     
-    }
-    
-    for (int i = 0; i < n; i++)
-        for (int j = 0; j < elements; j++){
-        
-            printf("item saved at index %d %d is %f\n", i, j, *(table + j + i*elements));
-        }
-        
-    
-    }
-    
-    */
     int item;
 
     MPI_Status status;
@@ -1417,7 +1416,7 @@ void storage_fn(int n, int elements)
     //printf("storage done\n");
 } //storage
 
-/******* WORKER *********/
+// Worker
 
 float *normalize(float *stored, int size, float average, float sd)
 {
@@ -1569,7 +1568,9 @@ int *preprocess_ABC(float *item, int elements, float average)
 
     return data;
 } //preprocess_ABC
+*/
 
+/*
 int *preprocess_SAX(float *item, int elements, int num_symbols, int size, int rank, int word_length)
 {
 
@@ -1841,7 +1842,7 @@ void worker_fn(int rank, int flag, int size_hash, int step_hash, int num_symbols
             }
         }
     }
-    //*(hash_matrix + i* l + j)
+    // *(hash_matrix + i* l + j)
     
     //printf("WORKER %d here \n", rank);
     //malloc float[size_hash] vector;//for SSH
@@ -2026,7 +2027,7 @@ void worker_fn(int rank, int flag, int size_hash, int step_hash, int num_symbols
 
 
 
-/******* MAIN *********/
+****** MAIN ********
 //this represents one whole run of an experiment
 //each parameter array starts with what experiment trial this is , n total of data items 13 and str filename 14
 //start is the zero-based index of first element to include
@@ -2146,6 +2147,7 @@ int my_main(int argc, char **argv)
     MPI_Finalize();
     return 0;
 }
+*/
 // own      own      own       send     send      send    send       send
 //manager hashtables  workers  storage    hash      sim     writer     receiver
 // 0      1-num_hash          size-5  size-4    size-3   size-2     size-1
