@@ -7,21 +7,47 @@
 #include <stdarg.h>
 #include <unistd.h>
 
-#define MAX(x, y) (((x) > (y)) ? (x) : (y))
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
+#include <glib.h>
+
+//#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+//#define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 #define RANK_MAIN_PROCESS 0
 #define RANK_STORAGE 1
 #define RANK_SIMILARITY 2
 #define RANK_HASH_TABLE 3
 
+/*
 #define CMD_START 1
 #define CMD_STOP 2
 #define CMD_CONFIG_HASH 3
 #define CMD_WORKER_DATA 4
 #define CMD_WORKER_AVAILABLE 5
 #define CMD_ABC_STORE 6
+*/
 
+/*
+#define TAG_STOP 255
+#define TAG_WORKER_HASH 1
+#define TAG_WORKER_AVAILABLE 2
+#define TAG_WORKER_LINE_INDEX 3
+#define TAG_WORKER_LINE_DATA 4
+#define TAG_STORAGE_LINE_INDEX 5
+#define TAG_STORAGE_DATA
+*/
+
+typedef enum {
+	TAG_WORKER_HASH,
+	TAG_WORKER_AVAILABLE,
+	TAG_WORKER_LINE_INDEX,
+	TAG_WORKER_LINE_DATA,
+	TAG_STORAGE_LINE_INDEX,
+	TAG_STORAGE_DATA,
+	TAG_HASHTABLE_LINE_INDEX, // 6
+	TAG_HASHTABLE_LINE_DATA,
+
+	TAG_STOP
+} tag_t;
 
 #define METHOD_ABC 0
 #define METHOD_SAX 1
@@ -75,6 +101,115 @@ void freeConfig(struct Config *config) {
 	}
 }
 
+typedef struct Hashtable
+{
+    int n;
+    int *codes;
+    int *counts;
+    int *items;
+    int index;
+    int c;
+} hashtable;
+
+/*
+//has to return n, codes, counts, items, index
+struct Hashtable append_to_table(struct Hashtable table, int hash, int item, int rank)
+{
+    //check if the hash code exists in the hash codes table
+    //if not resize all the tables
+    int ind = table.n;
+
+    for (int i = 0; i < table.n; i++)
+    {
+        if (table.codes[i] == hash)
+        {
+            ind = i;
+            break;
+        } //if found
+    }     //for searching hash code
+
+    if (ind == table.n)
+    {
+        table.n = table.n + 1;
+        table.codes = resize_table(table.codes, table.n);
+        table.counts = resize_table(table.counts, table.n);
+        table.counts[ind] = 0;
+
+        table.codes[ind] = hash;
+
+    //int c = table.counts[ind];
+    //printf("index %d and count %d\n", ind, c);
+
+        int s = 0;
+
+        for (int i = 0; i < table.n -1; i++)
+        {
+            // printf("here! table.index=%d\n", table.index);
+            s = s + table.counts[i];
+        } //for calculating size of items array
+
+        table.items = resize_table(table.items, s);
+
+        table.c = s;
+        // *(table.items + s) = item;
+        //printf("hashtable inserted item %d\n", item);
+        // printf("but not here\n");
+    } //if didnt find it need to resize
+
+    else
+    {
+        int s = 0;
+
+        for (int i = 0; i < table.n; i++)
+        {
+            s = s + table.counts[i];
+        } //for calculating size of items array
+
+        table.items = resize_table(table.items, s);
+
+        int t = 0;
+
+        for (int i = 0; i <= ind; i++)
+        {
+            t = t + table.counts[i];
+        } //for calculating size of items array before the newly inserted item
+
+        //move all items after it
+        for (int j = s; j > t; j--)
+        {
+            table.items[j] = table.items[j - 1];
+        }
+        //insert item
+        table.c = t;
+        //table.items[t] = item;
+        //printf("hashtable inserted item %d\n", item);
+    }
+
+    table.items[table.c] = item;
+    //printf("hashtable inserted item %d\n", item);
+     //printf("old table.index to %d\n", table.counts[ind]);
+    table.counts[ind] = table.counts[ind] + 1;
+    //printf("updated table.index to %d\n", table.counts[ind]);
+    //insert the hash code, item  at the right index, update count
+    table.index = ind;
+
+    int t = 0;
+
+    for (int i = 0; i < ind; i++)
+        {
+            t = t + table.counts[i];
+        } //for calculating size of items array before the newly inserted item
+
+    for (int i =0; i < table.counts[ind]; i++){
+        //printf("bucket %d has item %d for hash %d and code %d\n", ind, table.items[t+i], rank, table.codes[ind]);
+    }
+
+
+    return table;
+} //append to table
+
+*/
+
 void my_log(struct Config *config, char* s, ...) {
 
 	char buff[100];
@@ -93,19 +228,23 @@ void my_log(struct Config *config, char* s, ...) {
 	fflush(stdout);
 }
 
-void logHash(struct Config *config) {
-    for (int i=0; i<config->num_hash; i++) {
-    	my_log(config, "index %d: %d", i, config->hash[i]);
+void log_hash(struct Config *config) {
+	char buf[1000];
+	char *s=buf;
+	for (int i=0; i<config->num_hash; i++) {
+    	s = (char*) (buf+sprintf(s, "index %d: %d ", i, config->hash[i]));
     }
+	my_log(config, "Hash: %s", buf);
+
 }
 
 void stopAll(struct Config *config) {
 
-	int cmd_stop = CMD_STOP;
+	//int cmd_stop = CMD_STOP;
 
 	for (int i=1; i<config->cluster_size; i++) {
 		my_log(config, "Stopping: %d", i);
-		MPI_Send(&cmd_stop, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
+		MPI_Send(0, 0, MPI_INT, i, TAG_STOP, MPI_COMM_WORLD);
 	}
 }
 
@@ -176,7 +315,7 @@ void process_data_window(struct Config *config) {
 	}
 }
 
-char *preprocess_ABC(float *item, int elements, float average)
+char *abc_preprocess(float *item, int elements, float average)
 {
 
     char *data;
@@ -204,10 +343,16 @@ struct ABC_data_t {
 	int *data;
 };
 
+void process_requests(struct Config *config);
+
+
 void worker_fn2(struct Config *config) {
 
 	my_log(config, "worker_fn2");
 
+	process_requests(config);
+
+/*
 	int running = 1;
 
 	int cmd;
@@ -254,7 +399,7 @@ void worker_fn2(struct Config *config) {
 
 		        preprocess_ABC(data, config->elements, config->average);
 
-		        int cmd_abc_store = &CMD_ABC_STORE;
+		        int cmd_abc_store = CMD_ABC_STORE;
 
 		        MPI_Send(&cmd_abc_store, 1, MPI_INT, RANK_STORAGE, 0, MPI_COMM_WORLD);
 
@@ -269,6 +414,7 @@ void worker_fn2(struct Config *config) {
 		}
 
 	}
+*/
 
 }
 
@@ -392,6 +538,7 @@ int *random_indexes(int n, int elements, int size_hash)
 
 } //random_indexes
 
+/*
 float *create_random_matrix(int m, int n, int k)
 {
 
@@ -497,47 +644,49 @@ float *create_distances(int num_symbols, float *breakpoints)
     return distances;
 
 } //create_distances
-//************************************//
 
+*/
 
-void main_process_method_abc(struct Config *config) {
+int calc_worker_data_packed_size(struct Config *config) {
+	int buf_size_1;
+	MPI_Pack_size(1, MPI_INT, MPI_COMM_WORLD, &buf_size_1);
+
+	int buf_size_2;
+	MPI_Pack_size(config->elements, MPI_FLOAT, MPI_COMM_WORLD, &buf_size_2);
+
+	int buf_size = buf_size_1+buf_size_2;
+
+	return buf_size;
+}
+
+void abc_main_process(struct Config *config) {
 	my_log(config, "METHOD_ABC");
 
 	config->hash = random_indexes(config->num_hash, config->elements, config->size_hash);
 
-	logHash(config);
-
-    int cmd_config_hash = CMD_CONFIG_HASH;
+	log_hash(config);
 
     for (int i=0; i<config->worker_count; i++) {
-	    MPI_Send(&cmd_config_hash, 1, MPI_INT, config->rank_worker_start+i, 0, MPI_COMM_WORLD);
-    	MPI_Send(config->hash, config->num_hash, MPI_INT, config->rank_worker_start+i, 0, MPI_COMM_WORLD);
+	    //MPI_Send(&cmd_config_hash, 1, MPI_INT, config->rank_worker_start+i, 0, MPI_COMM_WORLD);
+    	MPI_Send(config->hash, config->num_hash, MPI_INT, config->rank_worker_start+i, TAG_WORKER_HASH, MPI_COMM_WORLD);
     }
-
-    int cmd_worker_data = CMD_WORKER_DATA;
 
     int line_index = 0;
 
     while (line_index < config->file_data.line_count) {
 
-    	int cmd;
     	MPI_Status mpi_status;
 
     	my_log(config, "Waiting for a worker");
 
-    	MPI_Recv(&cmd, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &mpi_status);
-
-    	if (cmd != CMD_WORKER_AVAILABLE) {
-    		my_log(config, "Unexpected command: %d", cmd);
-    	}
+    	MPI_Recv(NULL, 0, MPI_INT, MPI_ANY_SOURCE, TAG_WORKER_AVAILABLE, MPI_COMM_WORLD, &mpi_status);
 
     	my_log(config, "Worker available: %d for line: %d", mpi_status.MPI_SOURCE, line_index);
 
-	    MPI_Send(&cmd_worker_data, 1, MPI_INT, mpi_status.MPI_SOURCE, 0, MPI_COMM_WORLD);
-
 	    float *data = &config->file_data.data[line_index*config->file_data.column_count + config->start];
 
-	    MPI_Send(data, config->elements, MPI_FLOAT, mpi_status.MPI_SOURCE, 0, MPI_COMM_WORLD);
+	    MPI_Send(&line_index, 1, MPI_INT, mpi_status.MPI_SOURCE, TAG_WORKER_LINE_INDEX, MPI_COMM_WORLD);
+	    MPI_Send(data, config->elements, MPI_FLOAT, mpi_status.MPI_SOURCE, TAG_WORKER_LINE_DATA, MPI_COMM_WORLD);
 
 	    line_index++;
 
@@ -561,10 +710,17 @@ void main_process_fn(struct Config *config) {
 
     switch (config->flag) {
     	case METHOD_ABC:
+    		abc_main_process(config);
+    		break;
+    }
+
+/*
+    switch (config->flag) {
+    	case METHOD_ABC:
     		main_process_method_abc(config);
     		break;
 
- /*   	case 1:
+    	case 1:
     	    config->hash = random_indexes(config->num_hash, config->elements / config->word_length, config->size_hash);
     	    // MPI_Send(&hash[i], 1, MPI_INT, dest, 4, MPI_COMM_WORLD);
     	    config->breakpoints = create_breakpoints(config->num_symbols);
@@ -585,20 +741,326 @@ void main_process_fn(struct Config *config) {
     	    float *perm = create_random_matrix(config->num_hash, l, k);
     	    //MPI_Send(&perm[i*l + j], 1, MPI_FLOAT, dest, 6, MPI_COMM_WORLD); i num_hash j l
     		break;
-*/
     }
+*/
 
-    process_data_window(config);
+    //process_data_window(config);
 
-	//usleep(11*1000*1000);
+	usleep(11*1000*1000);
 
 	stopAll(config);
 
 
 }
 
+void abc_worker_hashtable(struct Config *config) {
+
+	int running=1;
+
+	char *data = malloc(sizeof(int) * config->size_hash * config->n );
+
+	while (running) {
+
+		int flag;
+		MPI_Status status;
+
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+
+		if (flag) {
+			my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+
+			switch((tag_t)status.MPI_TAG) {
+				case TAG_STOP:
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					running = 0;
+					my_log(config, "Stopping");
+					break;
+
+				case TAG_HASHTABLE_LINE_INDEX: {
+
+					int line_index;
+					MPI_Recv(&line_index, 1, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+					my_log(config, "Received line index: %d from %d", line_index, status.MPI_SOURCE);
+
+					MPI_Recv(&data[line_index*config->size_hash], config->size_hash, MPI_INT, status.MPI_SOURCE, TAG_HASHTABLE_LINE_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+					my_log(config, "Hash code data received; line: %d ", line_index);
+
+			        if (LOG_LEVEL == LOG_LEVEL_DEBUG) {
+			        	my_log(config, "Data");
+			        	for (int i=0; i<config->size_hash; i++) {
+			        		printf("%d ", data[line_index*config->size_hash + i]);
+			        	}
+			        	printf("\n");
+			        }
+
+					break;
+				}
+
+				default:
+
+					my_log(config, "Unexpected message: %d ", status.MPI_TAG);
+
+			}
+
+		}
+		else {
+			usleep(1000L);
+		}
+
+
+	} // running
+
+	free(data);
+
+} // abc_worker_hashtable
+
+void abc_worker_storage(struct Config *config) {
+
+	int running=1;
+
+	char *data = malloc(sizeof(char) * config->elements * config->n );
+
+	while (running) {
+
+		int flag;
+		MPI_Status status;
+
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+
+		if (flag) {
+			my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+
+			switch((tag_t)status.MPI_TAG) {
+				case TAG_STOP:
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					running = 0;
+					my_log(config, "Stopping");
+					break;
+
+				case TAG_STORAGE_LINE_INDEX: {
+
+					int line_index;
+					MPI_Recv(&line_index, 1, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+					MPI_Recv(&data[line_index*config->elements], config->elements, MPI_CHAR, status.MPI_SOURCE, TAG_STORAGE_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+					my_log(config, "Storage data received; line: %d ", line_index);
+
+			        if (LOG_LEVEL == LOG_LEVEL_DEBUG) {
+			        	my_log(config, "Data");
+			        	for (int i=0; i<config->elements; i++) {
+			        		printf("%d ", data[line_index*config->elements + i]);
+			        	}
+			        	printf("\n");
+			        }
+
+
+					break;
+				}
+
+				default:
+
+					my_log(config, "Unexpected message: %d ", status.MPI_TAG);
+
+			}
+
+		}
+		else {
+			usleep(1000L);
+		}
+
+
+	} // running
+
+	free(data);
+
+}
+
+void abc_worker(struct Config *config) {
+
+	int running=1;
+
+	while (running) {
+
+		int flag;
+		MPI_Status status;
+
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+
+		if (flag) {
+			my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+
+			switch((tag_t)status.MPI_TAG) {
+				case TAG_STOP:
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					running = 0;
+					my_log(config, "Stopping");
+					break;
+
+					// main process sent us the hash indexes
+				case TAG_WORKER_HASH:
+					config->hash = malloc(config->num_hash*sizeof(int));
+					MPI_Recv(config->hash, config->num_hash, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_HASH, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+					log_hash(config);
+					MPI_Send(NULL, 0, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_AVAILABLE, MPI_COMM_WORLD);
+					break;
+
+					// main process sent us a data line (line number [index], followed by the data)
+				case TAG_WORKER_LINE_INDEX: {
+
+					int line_index;
+					float *data = (float *) malloc(config->elements * sizeof(float));
+
+					MPI_Recv(&line_index, 1, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_LINE_INDEX, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+					MPI_Recv(data, config->elements, MPI_FLOAT, RANK_MAIN_PROCESS, TAG_WORKER_LINE_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+			        if (LOG_LEVEL == LOG_LEVEL_DEBUG) {
+			        	my_log(config, "Data");
+			        	for (int i=0; i<config->elements; i++) {
+			        		printf("%f ", data[i]);
+			        	}
+			        	printf("\n");
+			        }
+
+			        char *preprocessed = abc_preprocess(data, config->elements, config->average);
+
+			        MPI_Send(&line_index, 1, MPI_INT, RANK_STORAGE, TAG_STORAGE_LINE_INDEX, MPI_COMM_WORLD);
+
+			        MPI_Ssend(preprocessed, config->elements, MPI_CHAR, RANK_STORAGE, TAG_STORAGE_DATA, MPI_COMM_WORLD);
+
+			        // calculate the hash codes and send them to the hash table
+
+			        for (int hash_table_index=0; hash_table_index<config->num_hash; hash_table_index++) {
+
+			        	int hash_code[config->size_hash];
+
+			        	// config->hash contains starts of substrings. Here we build the substrings of the pre-porcessed data
+
+			        	int substring_start = config->hash[hash_table_index];
+
+			        	for (int i=0; i<config->size_hash; i++) {
+			        		hash_code[i] = preprocessed[substring_start + i];
+			        	}
+
+			        	MPI_Send(&hash_table_index, 1, MPI_INT, RANK_HASH_TABLE+hash_table_index, TAG_HASHTABLE_LINE_INDEX, MPI_COMM_WORLD);
+			        	MPI_Send(&hash_code, config->size_hash, MPI_INT, RANK_HASH_TABLE+hash_table_index, TAG_HASHTABLE_LINE_DATA, MPI_COMM_WORLD);
+			        }
+
+					MPI_Send(NULL, 0, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_AVAILABLE, MPI_COMM_WORLD);
+
+					free(data);
+					free(preprocessed);
+
+			        break;
+				}
+
+				default:
+					my_log(config, "Unexpected message: %d ", status.MPI_TAG);
+
+			}
+
+		}
+		else {
+			usleep(1000L);
+		}
+
+
+	}
+
+}
+
+
+void process_requests(struct Config *config) {
+
+	int running=1;
+
+	while (running) {
+
+		int flag;
+		MPI_Status status;
+
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+
+		if (flag) {
+			my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+
+			//int line_index;
+			//float *data = (float *) malloc(config->elements * sizeof(float));
+
+			//char *storage_data_abc = (char *) malloc(config->elements * sizeof(char));
+
+			switch((tag_t)status.MPI_TAG) {
+				case TAG_STOP:
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					running = 0;
+					my_log(config, "Stopping");
+					break;
+
+/*
+				case TAG_WORKER_HASH:
+					config->hash = malloc(config->num_hash*sizeof(int));
+					MPI_Recv(config->hash, config->num_hash, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_HASH, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+					log_hash(config);
+					MPI_Send(NULL, 0, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_AVAILABLE, MPI_COMM_WORLD);
+					break;
+
+				case TAG_WORKER_LINE_INDEX:
+					MPI_Recv(&line_index, 1, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_LINE_INDEX, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+					MPI_Recv(data, config->elements, MPI_FLOAT, RANK_MAIN_PROCESS, TAG_WORKER_LINE_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+			        if (LOG_LEVEL == LOG_LEVEL_DEBUG) {
+			        	my_log(config, "Data");
+			        	for (int i=0; i<config->elements; i++) {
+			        		printf("%f ", data[i]);
+			        	}
+			        	printf("\n");
+			        }
+
+			        char *preprocessed = preprocess_ABC(data, config->elements, config->average);
+
+			        MPI_Ssend(preprocessed, config->elements, MPI_CHAR, RANK_STORAGE, TAG_STORAGE_DATA, MPI_COMM_WORLD);
+
+					MPI_Send(NULL, 0, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_AVAILABLE, MPI_COMM_WORLD);
+
+			        break;
+
+				case TAG_STORAGE_DATA:
+
+					MPI_Recv(storage_data_abc, config->elements, MPI_CHAR, status.MPI_SOURCE, TAG_STORAGE_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+					my_log(config, "Storage data received");
+
+					break;
+*/
+
+				default:
+					my_log(config, "Unexpected message: %d ", status.MPI_TAG);
+
+			}
+
+		}
+		else {
+			usleep(1000L);
+		}
+
+
+	}
+
+}
+
 
 int main(int argc, char **argv) {
+
+	GHashTable* hash = g_hash_table_new(g_str_hash, g_str_equal);
+
+	g_hash_table_insert(hash,"Jazzy","Cheese");
+	    g_hash_table_insert(hash,"Mr Darcy","Treats");
+
+	    printf("There are %d keys in the hash table\n",
+	        g_hash_table_size(hash));
+
+	    printf("Jazzy likes %s\n",g_hash_table_lookup(hash,"Jazzy"));
+
+	    g_hash_table_destroy(hash);
 
     //initialize
     MPI_Init(&argc, &argv);
@@ -630,10 +1092,8 @@ int main(int argc, char **argv) {
 		if (config.rank==0) {
 			printf("This program requires at least %d processes\n", min_cluster_size);
 		}
-		//return 1;
+		return 1;
 	}
-
-    my_log(&config, "Start");
 
 	config.rank_worker_start = RANK_HASH_TABLE + config.num_hash;
 	config.worker_count = config.cluster_size - config.rank_worker_start;
@@ -641,18 +1101,21 @@ int main(int argc, char **argv) {
     switch (config.rank) {
     	case RANK_MAIN_PROCESS:
     		config.process_name = "Main";
-
-    		my_log(&config, "Worker start rank: %d worker count: %d", config.rank_worker_start,config.worker_count );
-
+    	    my_log(&config, "Start");
+    		my_log(&config, "Worker start rank: %d worker count: %d", config.rank_worker_start, config.worker_count );
     		main_process_fn(&config);
     		break;
 
     	case RANK_STORAGE:
     		config.process_name = "Storage";
+    		my_log(&config, "Start");
+    		abc_worker_storage(&config);
     		break;
 
     	case RANK_SIMILARITY:
     		config.process_name = "Similarity";
+    		my_log(&config, "Start");
+    		process_requests(&config);
     		break;
 
     	default:
@@ -660,20 +1123,23 @@ int main(int argc, char **argv) {
     		if (config.rank>=RANK_HASH_TABLE && config.rank<RANK_HASH_TABLE+config.num_hash) {
     			int hash_table_index = config.rank - RANK_HASH_TABLE;
     			sprintf(config.process_name, "Hash table %d", hash_table_index);
+    			my_log(&config, "Start");
     			// do hash table
+    			abc_worker_hashtable(&config);
     		}
     		else {
 
     			int worker_index = config.rank - config.rank_worker_start;
     			sprintf(config.process_name, "Worker %d", worker_index);
 
-    			worker_fn2(&config);
+    			my_log(&config, "Start");
+
+    			abc_worker(&config);
     		}
 
     		break;
     }
 
-    freeConfig(&config);
 
     MPI_Finalize();
 

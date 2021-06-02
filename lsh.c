@@ -17,55 +17,6 @@ UBC
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
-/*
-#define RANK_MAIN_PROCESS 0
-#define CMD_START 1
-#define CMD_STOP 2
-
-struct file_data_t {
-	int len;
-	int column_count;
-	int line_count;
-	float *data;
-};
-
-struct Config {
-
-	int rank;
-	int cluster_size;
-
-    int trial;
-
-    int flag, start, elements;
-    int num_hash, size_hash, step_hash;
-    int num_symbols, word_length;
-    float average, sd, sim;
-
-    int n;
-
-    char* filename;
-
-    struct file_data_t file_data;
-};
-
-void my_log(struct Config *config, char* s, ...) {
-
-	char buff[100];
-	time_t now = time (0);
-	strftime (buff, 100, "%H:%M:%S", localtime (&now));
-
-	printf("%d | %s | ", config->rank, buff);
-
-	// magic
-	va_list argptr;
-	va_start(argptr, s);
-	vfprintf(stdout, s, argptr);
-	va_end(argptr);
-
-	printf ("\n");
-}
-*/
-
 /******* FG-MPI Boilerplate begin *********/
 /*
 #include "fgmpi.h"
@@ -661,12 +612,15 @@ void similarity_fn(int flag, int elements, int num_symbols, int word_length, flo
 
 /******* HASH *********/
 
+
 /*
 int cmpfunc(const void *a, const void *b)
 {
     return (*(int *)a - *(int *)b);
 }
+*/
 
+/*
 int *random_indexes(int n, int elements, int size_hash)
 {
 
@@ -708,6 +662,7 @@ int *random_indexes(int n, int elements, int size_hash)
     return indexes;
 
 } //random_indexes
+*/
 
 float *create_random_matrix(int m, int n, int k)
 {
@@ -815,13 +770,11 @@ float *create_distances(int num_symbols, float *breakpoints)
 
 } //create_distances
 
-*/
 
 //creates the hash functions
 //use tag 4 for hash function
 //tag 0 is shut down
 //tag 6 for permutations
-/*
 void hash_fn_SSH(int num_hash, int size_hash, int num_symbols)
 {
 
@@ -1042,6 +995,7 @@ int *resize_table(int *array, int size)
 
 } //resize
 
+/*
 typedef struct Hashtable
 {
     int n;
@@ -1051,6 +1005,7 @@ typedef struct Hashtable
     int index;
     int c;
 } hashtable;
+*/
 
 //reads the array as a decimal int
 int to_dec(int *data, int num_symbols)
@@ -1568,9 +1523,7 @@ int *preprocess_ABC(float *item, int elements, float average)
 
     return data;
 } //preprocess_ABC
-*/
 
-/*
 int *preprocess_SAX(float *item, int elements, int num_symbols, int size, int rank, int word_length)
 {
 
@@ -2027,7 +1980,7 @@ void worker_fn(int rank, int flag, int size_hash, int step_hash, int num_symbols
 
 
 
-****** MAIN ********
+//****** MAIN ********
 //this represents one whole run of an experiment
 //each parameter array starts with what experiment trial this is , n total of data items 13 and str filename 14
 //start is the zero-based index of first element to include
@@ -2147,7 +2100,7 @@ int my_main(int argc, char **argv)
     MPI_Finalize();
     return 0;
 }
-*/
+
 // own      own      own       send     send      send    send       send
 //manager hashtables  workers  storage    hash      sim     writer     receiver
 // 0      1-num_hash          size-5  size-4    size-3   size-2     size-1
