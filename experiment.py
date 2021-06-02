@@ -1,5 +1,11 @@
 #run python3 experiment.py exp_num
 
+
+#free() invalid next size (fast)
+#malloc() top size corrupted
+#exit code 134 
+#aborted signal 6
+
 #this script runs experiment with the code in lsh.c 
 #across the files in processed/ folder
 #with various parameter values
@@ -43,8 +49,8 @@ def main():
 
 def exp1():
     print("running exp1")
-    nfg = 1
-    num = 12
+    nfg = 2
+    num = 20
 
     trial = [1, 2, 3]
     flag = [0, 1, 2]
@@ -119,7 +125,7 @@ def exp2():
 
     s = time.time_ns() // 1_000_000 
 
-    for i in range(0,3):
+    for i in range(1, 2):
         print(f"TRIAL {trial[i]}")
         if (flag[i] == 0): 
             fname = "processed/0-flight-binary.txt"

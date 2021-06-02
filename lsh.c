@@ -79,10 +79,10 @@ void manager_fn(int elements, int num_hash, int size)
         for (int j = 0; j < elements; j++)
         {
             MPI_Recv(&data, 1, MPI_FLOAT, size - 1, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-            //printf("manager received %f\n", data);
+            ////printf("manager received %f\n", data);
             if (status.MPI_TAG == 0)
             {
-                //printf("manager received tag 0\n");
+                ////printf("manager received tag 0\n");
                 shut = 1;
                 break;
             } //shut down
@@ -98,11 +98,11 @@ void manager_fn(int elements, int num_hash, int size)
 
         //get message from worker that its available = data is the worker index
         MPI_Recv(&worker, 1, MPI_INT, MPI_ANY_SOURCE, 8, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        //printf("manager received worker %d is available\n", worker);
+        ////printf("manager received worker %d is available\n", worker);
 
         //send the data item index to the worker
         MPI_Send(&count, 1, MPI_INT, worker, 8, MPI_COMM_WORLD);
-        printf("manager assigned item %d to worker %d\n", count, worker);
+        //printf("manager assigned item %d to worker %d\n", count, worker);
 
         //send the subsequnce to the worker
         for (int k = 0; k < elements; k++)
@@ -110,9 +110,9 @@ void manager_fn(int elements, int num_hash, int size)
             MPI_Send(&item[k], 1, MPI_FLOAT, worker, 8, MPI_COMM_WORLD);
 
         } //for sending subsequence
-        //printf("manager sent item %d\n", count);
+        ////printf("manager sent item %d\n", count);
 
-        //printf("manager received and sent item %d\n", count);
+        ////printf("manager received and sent item %d\n", count);
     } //while for each data item
 
     //start shut down procedure
@@ -143,12 +143,12 @@ void manager_fn(int elements, int num_hash, int size)
     {
         //send MPI_INT message with tag 0 to shut down
         MPI_Send(&data, 1, MPI_INT, size - k, 0, MPI_COMM_WORLD);
-        //printf("sending command to %d\n", size-k);
+        ////printf("sending command to %d\n", size-k);
     } //for shutting down
 
     free(item);
 
-    //printf("manager done\n");
+    ////printf("manager done\n");
 
 } //manager_fn
 
@@ -160,7 +160,7 @@ void manager_fn(int elements, int num_hash, int size)
 void receiver_fn(int start, int elements, char *filename)
 {
 
-    printf("receiver starting\n");
+    //printf("receiver starting\n");
 
     float data;
 
@@ -170,7 +170,7 @@ void receiver_fn(int start, int elements, char *filename)
     FILE *fp;
     fp = fopen(filename, "r");
 
-    //printf("opened file %s\n", filename);
+    ////printf("opened file %s\n", filename);
 
     int line=0;
     
@@ -179,7 +179,7 @@ void receiver_fn(int start, int elements, char *filename)
 
         int count = 0;
  
-        printf("line read as string %d\n", line);
+        //printf("line read as string %d\n", line);
         line ++;
         
         char *ptr = str, *eptr;
@@ -193,7 +193,7 @@ void receiver_fn(int start, int elements, char *filename)
             {
 
                 MPI_Send(&data, 1, MPI_FLOAT, 0, 5, MPI_COMM_WORLD);
-                //printf("sending %f\n", data);
+                ////printf("sending %f\n", data);
                 
             }
             count++;
@@ -208,12 +208,12 @@ void receiver_fn(int start, int elements, char *filename)
         {
             data = strtof(ptr, &eptr);
             if (ptr == eptr){
-                printf("count %d\n", count);
-                printf("pointer points to %d\n", (int) *eptr);
+                //printf("count %d\n", count);
+                //printf("pointer points to %d\n", (int) *eptr);
                 break;}
             ptr = eptr;
 
-            printf("%f", data);
+            //printf("%f", data);
 
             if ((count >= start) && (count < start + elements))
             {
@@ -221,13 +221,13 @@ void receiver_fn(int start, int elements, char *filename)
                 data = (float)data;
 
                 //MPI_Send(&data, 1, MPI_FLOAT, 0, 5, MPI_COMM_WORLD);
-                //printf("sending %f\n", data);
+                ////printf("sending %f\n", data);
                 
             }
-            //printf("COUNT %d\n", count);
+            ////printf("COUNT %d\n", count);
             count++;
 
-            //printf("number read as float %f\n", data);
+            ////printf("number read as float %f\n", data);
         } while ((*eptr) && (*eptr != '\n'));
 
 
@@ -236,11 +236,11 @@ void receiver_fn(int start, int elements, char *filename)
         
 
     MPI_Send(&data, 1, MPI_FLOAT, 0, 0, MPI_COMM_WORLD);
-    //printf("receiver sent %f to manager with tag 0\n", data);
+    ////printf("receiver sent %f to manager with tag 0\n", data);
 
     fclose(fp);
 
-    //printf("receiver done\n");
+    ////printf("receiver done\n");
 } //receiver_fn
 
 /******* WRITER *********/
@@ -255,7 +255,7 @@ void receiver_fn(int start, int elements, char *filename)
 //tag 2 is hash bucket
 void writer_fn(int trial, int flag, int size_hash, int num_hash)
 {
-    //printf("writer starting\n");
+    ////printf("writer starting\n");
     //create results file
     FILE *fp;
 
@@ -283,14 +283,14 @@ void writer_fn(int trial, int flag, int size_hash, int num_hash)
         strcat(name, "SSH");
     }
 
-    //printf("%s\n",name);
+    ////printf("%s\n",name);
 
     sprintf(append, "%d", trial); // put the int into a string
     strcat(name, append);
 
     strcat(name, ".txt");
 
-    printf("%s\n",name);
+    //printf("%s\n",name);
 
     fp = fopen(name, "w");
     
@@ -306,7 +306,7 @@ void writer_fn(int trial, int flag, int size_hash, int num_hash)
     {
 
         MPI_Recv(&data, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-        //printf("recieved %d\n", data);
+        ////printf("recieved %d\n", data);
 
         if (status.MPI_TAG == 0)
         {
@@ -317,28 +317,28 @@ void writer_fn(int trial, int flag, int size_hash, int num_hash)
 
         else if (status.MPI_TAG == 1)
         {
-        //printf("else clause\n");
+        ////printf("else clause\n");
             int ind2;
             float sim;
             fprintf(fp, "sim ");
             fprintf(fp, "%d ", data);
             MPI_Recv(&ind2, 1, MPI_INT, status.MPI_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            //printf("recieved %d\n", ind2);
+            ////printf("recieved %d\n", ind2);
             fprintf(fp, "%d ", ind2);
             MPI_Recv(&sim, 1, MPI_FLOAT, status.MPI_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             fprintf(fp, "%f", sim);
-            //printf("recieved %f\n", sim);
+            ////printf("recieved %f\n", sim);
 
         } //if tag is 1 receive sim
 
         else if (status.MPI_TAG == 2)
         {
         
-        //printf("else if clause\n");
+        ////printf("else if clause\n");
             int ind, size, elem;
 
             fprintf(fp, "bucket ");
-            //printf("receiving bucket\n");
+            ////printf("receiving bucket\n");
 
             MPI_Recv(&ind, 1, MPI_INT, status.MPI_SOURCE, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
@@ -358,7 +358,7 @@ void writer_fn(int trial, int flag, int size_hash, int num_hash)
 
             } //for hash bucket
             
-            //printf("received bucket\n");
+            ////printf("received bucket\n");
 
         } //if tag is 2 receive hash bucket
 
@@ -371,7 +371,7 @@ void writer_fn(int trial, int flag, int size_hash, int num_hash)
 
     fclose(fp);
 
-    //printf("writer done\n");
+    ////printf("writer done\n");
 } //writer_fn
 
 /******* SIMILARITY *********/
@@ -405,36 +405,38 @@ float SAX_sim(int *item1, int *item2, int n, int w, int size, int rank)
 
     float one = sqrt(n / w);
     
-    //printf("n is %d and w is %d\n", n, w);
+    //printf("CHECK n is %d and w is %d\n", n, w);
 
-    //printf("one is %f\n", one);
+    //printf("CHECK one is %f\n", one);
 
     float sum = 0;
     for (int i = 0; i < w; i++)
     {
 
-        int ind1 = item1[i];
+        //int ind1 = item1[i];
 
-        int ind2 = item2[i];
+        //int ind2 = item2[i];
 
-        MPI_Send(&ind1, 1, MPI_INT, size - 4, 7, MPI_COMM_WORLD);
+        MPI_Send(&item1[i], 1, MPI_INT, size - 4, 7, MPI_COMM_WORLD);
 
-        MPI_Send(&ind2, 1, MPI_INT, size - 4, 7, MPI_COMM_WORLD);
+        MPI_Send(&item2[i], 1, MPI_INT, size - 4, 7, MPI_COMM_WORLD);
         
-        //printf("sent\n");
+        //printf("CHECK sent %d %d\n", item1[i], item2[i]);
 
         float dist;
 
+
         MPI_Recv(&dist, 1, MPI_FLOAT, size - 4, 7, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
 
         sum = sum + pow(dist, 2);
         
-        //printf("sum is %f dist is %f for symbols %d %d\n", sum, dist, ind1, ind2);
+        //printf("CHECK sum is %f dist is %f for symbols %d %d\n", sum, dist, ind1, ind2);
     }
 
     float two = sqrt(sum);
     
-    //printf("two is %f\n", two);
+    //printf("CHECK two is %f\n", two);
 
     return one * two;
 
@@ -481,7 +483,7 @@ float SSH_sim(int *item1, int *item2, int size)
 void similarity_fn(int flag, int elements, int num_symbols, int word_length, float siml, int size, int rank, int num_hash)
 {
 
-    //printf("similarity starting\n");
+    ////printf("similarity starting\n");
 
     int data;
 
@@ -491,8 +493,8 @@ void similarity_fn(int flag, int elements, int num_symbols, int word_length, flo
     if (flag == 1)
     {
         elems = elements / word_length;
-        //printf("elems is %d\n", elems);
-        //printf("word length is %d\n", word_length);
+        ////printf("elems is %d\n", elems);
+        ////printf("word length is %d\n", word_length);
 
     } //lower length of preprocessed data item if SAX
 
@@ -518,14 +520,17 @@ void similarity_fn(int flag, int elements, int num_symbols, int word_length, flo
 
     while (1)
     {
-
+        //printf("SIM Starting new loop\n");
         MPI_Recv(&data, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
        //printf("SIM recieved message with tag %d from node %d\n", status.MPI_TAG, status.MPI_SOURCE);
 
         if (status.MPI_TAG == 0)
         {
             done++;
-            if (done == num_hash){break;}
+            if (done == num_hash){
+                //printf("SIM received shut down command %d\n", done);
+                break;}
+            //printf("SIM received shut down command %d\n", done);
             continue;
         } //if tag is 0 break
 
@@ -541,30 +546,72 @@ void similarity_fn(int flag, int elements, int num_symbols, int word_length, flo
         //printf("SIM recv second index %d\n", ind2);
         //get item1
 
-        //send request to size-5 storage node
-        MPI_Send(&ind1, 1, MPI_INT, size - 5, 2, MPI_COMM_WORLD);
-        
-        
-        //receive elements elements with tag 2 and store as item1
-        for (int i = 0; i < elems; i++)
-        {
-    
-            MPI_Recv(&item1[i], 1, MPI_INT, size - 5, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        while(1){
+            //send request to size-5 storage node
+            //printf("A REquesting item %d\n", ind1);
+            MPI_Send(&ind1, 1, MPI_INT, size - 5, 2, MPI_COMM_WORLD);
 
-        } //for getting item1
+            //printf("WAITING\n");
+
+            int cmd = 0;
+        
+            MPI_Recv(&cmd, 1, MPI_INT, size-5, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            //printf("A received %d\n", cmd);
+        
+            if (cmd == 0){
+                //printf("A continuint /n");
+                continue;}
+
+            if(cmd == 1){
+                //receive elements elements with tag 2 and store as item1
+                for (int i = 0; i < elems; i++)
+                 {
+                    //printf("Receiving item 1 \n");
+                    MPI_Recv(&item1[i], 1, MPI_INT, size - 5, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+                } //for getting item1
+               break; 
+            }
+
+
+        }
+
+        //printf("SIM got item1\n");
 
         //get item2
 
-        MPI_Send(&ind2, 1, MPI_INT, size - 5, 2, MPI_COMM_WORLD);
-        //printf("receiving item 2\n");
-        //receive elements elements with tag 2 and store as item2
-        for (int i = 0; i < elems; i++)
-        {
-            MPI_Recv(&item2[i], 1, MPI_INT, size - 5, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        while(1){
+            //send request to size-5 storage node
 
-        } //for getting item2
+            //printf("B REquesting item %d\n", ind2);
+            MPI_Send(&ind2, 1, MPI_INT, size - 5, 2, MPI_COMM_WORLD);
 
+            //printf("WAITNG 2\n");
+
+            int cmd = 0;
+        
+            MPI_Recv(&cmd, 1, MPI_INT, size-5, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            //printf("B received %d\n", cmd);
+        
+            if (cmd == 0){continue;}
+
+            if(cmd == 1){
+                //receive elements elements with tag 2 and store as item2
+                for (int i = 0; i < elems; i++)
+                 {
     
+                    MPI_Recv(&item2[i], 1, MPI_INT, size - 5, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+                } //for getting item2
+                break;
+            }
+
+        }
+
+
+        //printf("SIM received items\n");
 
         //calc the sim
         float simf=0;
@@ -572,26 +619,28 @@ void similarity_fn(int flag, int elements, int num_symbols, int word_length, flo
         {
             //ABC
             simf = ABC_sim(item1, item2, siml, elements);
-            //printf("sim for items %d and %d is %f\n", ind1, ind2, simf);
+            ////printf("sim for items %d and %d is %f\n", ind1, ind2, simf);
         }
         else if (flag == 1)
         {
             //SAX
+            //printf("CALC sim %d %d\n", ind1, ind2);
             simf = SAX_sim(item1, item2, elements, elems, size, rank);
+            //printf("SIM calc done %d %d\n", ind1, ind2);
         }
         else if (flag == 2)
         {
             //SSH
-        //printf("calc sim\n");
+            //printf("calc sim\n");
             simf = SSH_sim(item1, item2, elems);
-            //printf("sim calc done\n");
+            ////printf("sim calc done\n");
         }
 
         //send the sim pair to writer rank size-2 with tag 1
         MPI_Send(&ind1, 1, MPI_INT, size - 2, 1, MPI_COMM_WORLD);
         MPI_Send(&ind2, 1, MPI_INT, size - 2, 1, MPI_COMM_WORLD);
         MPI_Send(&simf, 1, MPI_FLOAT, size - 2, 1, MPI_COMM_WORLD);
-        printf("sent %d %d %f pair to writer\n", ind1, ind2, simf);
+        //printf("sent %d %d %f pair to writer\n", ind1, ind2, simf);
 
     } //while tag is not 0
 
@@ -599,6 +648,8 @@ void similarity_fn(int flag, int elements, int num_symbols, int word_length, flo
     free(item2);
     
     data = 0;
+
+    //printf("SIM sending done command to writer");
     
     MPI_Send(&data, 1, MPI_INT, size-2, 0, MPI_COMM_WORLD);
 
@@ -644,7 +695,7 @@ int *random_indexes(int n, int elements, int size_hash)
         indexes[i] = j;
         elem[j] = 1;
     } //for generating random indexes
-    //printf("end loop");
+    ////printf("end loop");
     //sort in ascending order
 
     qsort(indexes, n, sizeof(indexes[0]), cmpfunc);
@@ -670,9 +721,10 @@ float *create_random_matrix(int m, int n, int k)
         for (int i = 0; i < n; i++)
         {
 
-            *(res + j * m + i) = k * ((float)rand() / (float)RAND_MAX);
+            //*(res + j * m + i) = k * ((float)rand() / (float)RAND_MAX);
+            res[j * n + i] = k * ((float)rand() / (float)RAND_MAX);
 
-            //printf("row %d column %d value %f\n", j, i, *(res + j*m + i));
+            ////printf("row %d column %d value %f\n", j, i, *(res + j*m + i));
 
         } //for generating random indexes for one row
     }
@@ -750,7 +802,7 @@ float *create_distances(int num_symbols, float *breakpoints)
                 int mx = MAX(i, j) - 1;
                 int mn = MIN(i, j);
 
-                *(distances + i * num_symbols + j) = breakpoints[mx] - breakpoints[mn];
+                distances[i * num_symbols + j] = breakpoints[mx] - breakpoints[mn];
 
             } //else
         }
@@ -792,6 +844,8 @@ void hash_fn_SSH(int num_hash, int size_hash, int num_symbols)
 
         if (status.MPI_TAG == 0)
         {
+
+            //printf("HASH RECEIVED SHUT DOWN COMMAND");
             break;
         }
 
@@ -815,8 +869,11 @@ void hash_fn_SSH(int num_hash, int size_hash, int num_symbols)
             
                  for (int j = 0; j < l; j++)
                 {
-                    MPI_Send(&perm[i], 1, MPI_FLOAT, dest, 6, MPI_COMM_WORLD);
-                    //printf("sending to %d\n", dest);
+                    ////printf("HERE sending perm of %d\n", (i*l + j));
+                    int ind = i*l + j;
+                    MPI_Send(&perm[ind], 1, MPI_FLOAT, dest, 6, MPI_COMM_WORLD);
+                    ////printf("HERE sent perm of %d\n", (i*l + j));
+                    ////printf("sending to %d\n", dest);
                     
                     }
                 //*(perm + i*num_hash + j)) j til l
@@ -826,7 +883,11 @@ void hash_fn_SSH(int num_hash, int size_hash, int num_symbols)
     } //while tag is not 0
 
     free(hash);
+
+    //printf("HASH NODE FREED HASH\n");
     free(perm);
+
+    //printf("HASH NODE IS DONE\n");
 
 } //hash SSH
 
@@ -840,6 +901,15 @@ void hash_fn_SAX(int elements, int num_hash, int num_symbols, int word_length, i
     //and precalculate distances tag 7
 
     int *hash = random_indexes(num_hash, elements / word_length, size_hash);
+
+    printf("NUMBER of words is %d\n", elements/word_length);
+
+    printf("ELEMENTS is %d\n", elements);
+    printf("WORD length is %d\n", word_length);
+
+    for (int i = 0; i < num_hash; i++){printf("HASH %d is %d\n", i, hash[i]);}
+
+
 
     float *breakpoints = create_breakpoints(num_symbols);
 
@@ -867,7 +937,7 @@ void hash_fn_SAX(int elements, int num_hash, int num_symbols, int word_length, i
             
             for (int i = 0; i < num_hash; i++)
             {
-                //printf("hash value %d\n", hash[i]);
+                ////printf("hash value %d\n", hash[i]);
                 MPI_Send(&hash[i], 1, MPI_INT, dest, 4, MPI_COMM_WORLD);
             }
 
@@ -880,7 +950,7 @@ void hash_fn_SAX(int elements, int num_hash, int num_symbols, int word_length, i
             
             for (int i = 0; i < num_symbols; i++)
             {
-                //printf("hash value %d\n", hash[i]);
+                ////printf("hash value %d\n", hash[i]);
                 MPI_Send(&breakpoints[i], 1, MPI_FLOAT, dest, 6, MPI_COMM_WORLD);
             }
 
@@ -892,11 +962,15 @@ void hash_fn_SAX(int elements, int num_hash, int num_symbols, int word_length, i
         else if (status.MPI_TAG == 7)
         {
             int s1, s2;
+
+            s1 = dest;
                
             //MPI_Recv(&s1, 1, MPI_INT, MPI_ANY_SOURCE, 7, MPI_COMM_WORLD, &status);
             MPI_Recv(&s2, 1, MPI_INT, status.MPI_SOURCE, 7, MPI_COMM_WORLD, &status);
 
-            MPI_Send(&*(distances + dest * num_symbols + s2), 1, MPI_FLOAT, status.MPI_SOURCE, 7, MPI_COMM_WORLD);
+            //printf("TRYING to access %d\n", (s1*num_symbols + s2));
+
+            MPI_Send(&distances[s1 * num_symbols + s2], 1, MPI_FLOAT, status.MPI_SOURCE, 7, MPI_COMM_WORLD);
             //*(distances + i*num_symbols + j); this works for print i row j column both num_symbols
 
         } //else for tag 7 distances
@@ -914,11 +988,11 @@ void hash_fn_ABC(int elements, int num_hash, int size_hash)
     //create the necessary hash functions
     //for ABC it is num_hash indexes between start and start+elements-1
 
-    //printf("ABC hash starting\n");
+    ////printf("ABC hash starting\n");
 
     int *hash = random_indexes(num_hash, elements, size_hash);
 
-    //printf("ABC hash saved\n");
+    ////printf("ABC hash saved\n");
 
     int dest;
 
@@ -929,7 +1003,7 @@ void hash_fn_ABC(int elements, int num_hash, int size_hash)
 
         MPI_Recv(&dest, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 
-        //printf("hash requested from node %d\n", dest);
+        ////printf("hash requested from node %d\n", dest);
 
         if (status.MPI_TAG == 0)
         {
@@ -941,10 +1015,10 @@ void hash_fn_ABC(int elements, int num_hash, int size_hash)
 
             for (int i = 0; i < num_hash; i++)
             {
-                //printf("hash value %d\n", hash[i]);
+                ////printf("hash value %d\n", hash[i]);
                 MPI_Send(&hash[i], 1, MPI_INT, dest, 4, MPI_COMM_WORLD);
             }
-            //printf("hash sent\n");
+            ////printf("hash sent\n");
             //for sending vector
 
         } //if tag 4 for hash function
@@ -953,7 +1027,7 @@ void hash_fn_ABC(int elements, int num_hash, int size_hash)
 
     free(hash);
 
-    //printf("ABC hash done\n");
+    ////printf("ABC hash done\n");
 
 } //hash ABC
 
@@ -1038,13 +1112,13 @@ struct Hashtable append_to_table(struct Hashtable table, int hash, int item, int
         table.codes[ind] = hash;
 
     int c = table.counts[ind];
-    //printf("index %d and count %d\n", ind, c);
+    ////printf("index %d and count %d\n", ind, c);
 
         int s = 0;
 
         for (int i = 0; i < table.n -1; i++)
         {
-            // printf("here! table.index=%d\n", table.index);
+            // //printf("here! table.index=%d\n", table.index);
             s = s + table.counts[i];
         } //for calculating size of items array
 
@@ -1052,8 +1126,8 @@ struct Hashtable append_to_table(struct Hashtable table, int hash, int item, int
 
         table.c = s;
         //*(table.items + s) = item;
-        //printf("hashtable inserted item %d\n", item);
-        // printf("but not here\n");
+        ////printf("hashtable inserted item %d\n", item);
+        // //printf("but not here\n");
     } //if didnt find it need to resize
 
     else
@@ -1082,14 +1156,14 @@ struct Hashtable append_to_table(struct Hashtable table, int hash, int item, int
         //insert item
         table.c = t;
         //table.items[t] = item;
-        //printf("hashtable inserted item %d\n", item);
+        ////printf("hashtable inserted item %d\n", item);
     }
 
     table.items[table.c] = item;
-    //printf("hashtable inserted item %d\n", item);
-     //printf("old table.index to %d\n", table.counts[ind]);
+    ////printf("hashtable inserted item %d\n", item);
+     ////printf("old table.index to %d\n", table.counts[ind]);
     table.counts[ind] = table.counts[ind] + 1;
-    //printf("updated table.index to %d\n", table.counts[ind]);
+    ////printf("updated table.index to %d\n", table.counts[ind]);
     //insert the hash code, item  at the right index, update count
     table.index = ind;
     
@@ -1101,7 +1175,7 @@ struct Hashtable append_to_table(struct Hashtable table, int hash, int item, int
         } //for calculating size of items array before the newly inserted item
     
     for (int i =0; i < table.counts[ind]; i++){
-        //printf("bucket %d has item %d for hash %d and code %d\n", ind, table.items[t+i], rank, table.codes[ind]);
+        ////printf("bucket %d has item %d for hash %d and code %d\n", ind, table.items[t+i], rank, table.codes[ind]);
     }
     
     
@@ -1115,7 +1189,7 @@ struct Hashtable append_to_table(struct Hashtable table, int hash, int item, int
 //tag 1 is sim pair
 void hashtable_fn(int size, int size_hash, int rank, int flag, int num_workers, int n)
 {
-    //printf("hashtable %d starting\n", rank);
+    ////printf("hashtable %d starting\n", rank);
     int data;
     int item;
     int count;
@@ -1152,8 +1226,9 @@ void hashtable_fn(int size, int size_hash, int rank, int flag, int num_workers, 
 
     while (1)
     {
-        // printf("entered\n");
+        // //printf("entered\n");
         MPI_Recv(&data, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+        //printf("HASHtable %d received %d from %d with tag %d\n", rank, data, status.MPI_SOURCE, status.MPI_TAG);
 
         if (status.MPI_TAG == 0)
         {
@@ -1174,7 +1249,7 @@ void hashtable_fn(int size, int size_hash, int rank, int flag, int num_workers, 
 
         //receive the hash code
 
-        //printf("hashtable %d got item %d from worker %d\n", rank, item, status.MPI_SOURCE);
+        ////printf("hashtable %d got item %d from worker %d\n", rank, item, status.MPI_SOURCE);
 
         if (flag == 0)
         {
@@ -1195,26 +1270,26 @@ void hashtable_fn(int size, int size_hash, int rank, int flag, int num_workers, 
         else if (flag == 2)
         {
             MPI_Recv(&hash_SSH, 1, MPI_INT, status.MPI_SOURCE, 9, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            //printf("hashtable received hash value\n");
+            ////printf("hashtable received hash value\n");
         } //else if SSH
 
         if (flag == 2)
         {
-            // printf("if\n");
+            // //printf("if\n");
             table = append_to_table(table, hash_SSH, item, rank);
-            // printf("ifdone\n");
+            // //printf("ifdone\n");
         }
         else
         {
-            // printf("else\n");
+            // //printf("else\n");
             table = append_to_table(table, to_dec(hash, size_hash), item, rank);
-            // printf("elsedone\n");
+            // //printf("elsedone\n");
         }
-            //printf("size of bucket is %d\n", table.counts[table.index]);
-        // printf("something\n");
+            ////printf("size of bucket is %d\n", table.counts[table.index]);
+        // //printf("something\n");
         if (table.counts[table.index] > 1)
         {
-            //printf("size of bucket is %d\n", table.counts[table.index]);
+            ////printf("size of bucket is %d\n", table.counts[table.index]);
 
             int k = table.c - table.counts[table.index] +1;
 
@@ -1223,13 +1298,13 @@ void hashtable_fn(int size, int size_hash, int rank, int flag, int num_workers, 
                 //item was inserted at table.items[table.c]
                 //neighbours are in table.items starting from table.c-table.counts[table.index]+1
                 nbor = table.items[i];
-                printf("hashtable %d sending pair %d %d\n", rank, nbor, item);
+                //printf("hashtable %d sending pair %d %d\n", rank, nbor, item);
                 MPI_Send(&nbor, 1, MPI_INT, size - 3, 1, MPI_COMM_WORLD);
                 MPI_Send(&item, 1, MPI_INT, size - 3, 1, MPI_COMM_WORLD);
 
             } //for sending all pairs for sim calculation
         }     //if have items to send
-        //printf("hashtable %d done with item %d\n", rank, item);
+        ////printf("hashtable %d done with item %d\n", rank, item);
     } //while not shut down procedure
 
     //receive either message to shut down or data item index
@@ -1245,7 +1320,7 @@ void hashtable_fn(int size, int size_hash, int rank, int flag, int num_workers, 
     for (int i = 0; i < table.n; i++)
     {
     
-        printf("hashtable %d sending bucket %d\n", rank, i);
+        //printf("hashtable %d sending bucket %d\n", rank, i);
         //size of bucket
         MPI_Send(&table.counts[i], 1, MPI_INT, size-2, 2, MPI_COMM_WORLD);
         //hash index
@@ -1274,9 +1349,10 @@ void hashtable_fn(int size, int size_hash, int rank, int flag, int num_workers, 
     }
     //printf("hashtable %d sending done command to writer\n", rank);
     MPI_Send(&rank, 1, MPI_INT, size-2, 0, MPI_COMM_WORLD);
+    //printf("HASHtable between sends\n");
     MPI_Send(&rank, 1, MPI_INT, size-3, 0, MPI_COMM_WORLD);
 
-    printf("Hashtable %d sent\n", rank);
+    //printf("Hashtable %d sent\n", rank);
 
     //get manager message to hashtables that we are done
     //send our stuff to writer
@@ -1288,7 +1364,7 @@ void hashtable_fn(int size, int size_hash, int rank, int flag, int num_workers, 
     free(table.items);
     free(table.codes);
 
-    printf("Hashtable %d done\n", rank);
+    //printf("Hashtable %d done\n", rank);
 
 } //hashtable fn
 
@@ -1296,10 +1372,10 @@ void hashtable_fn(int size, int size_hash, int rank, int flag, int num_workers, 
 void storage_fn(int n, int elements)
 {
 
-    //printf("storage starting\n");
+    ////printf("storage starting\n");
     // float table[n][elements];
     int *table = (int *)malloc(n * elements * sizeof(int));
-    int index;
+    int ind;
 
     /*
     for (int i =0; i < elements; i++){
@@ -1310,7 +1386,7 @@ void storage_fn(int n, int elements)
     for (int i = 0; i < n; i++)
         for (int j = 0; j < elements; j++){
         
-            printf("item saved at index %d %d is %f\n", i, j, *(table + j + i*elements));
+            //printf("item saved at index %d %d is %f\n", i, j, *(table + j + i*elements));
         }
         
     
@@ -1319,14 +1395,18 @@ void storage_fn(int n, int elements)
     */
     int item;
 
+    int *saved = (int *)malloc(n * sizeof(int));
+
+    for (int i = 0; i < n; i++){saved[i] = 0;}
+
     MPI_Status status;
     while (1)
     {
-        MPI_Recv(&index, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status); // get row of table
-        //printf("STORAGE received message from %d with tag %d\n", status.MPI_SOURCE, status.MPI_TAG);
+        MPI_Recv(&ind, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status); // get row of table
+        ////printf("STORAGE received message from %d with tag %d\n", status.MPI_SOURCE, status.MPI_TAG);
         if (status.MPI_TAG == 0)
         {
-            //printf("storage got shut down command from %d\n", status.MPI_SOURCE);
+            ////printf("storage got shut down command from %d\n", status.MPI_SOURCE);
             break;
         }
         if (status.MPI_TAG == 3)
@@ -1336,22 +1416,45 @@ void storage_fn(int n, int elements)
             {
                 MPI_Recv(&item, 1, MPI_INT, status.MPI_SOURCE, 3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-                *(table + (index - 1) * elements + i) = item;
-                //printf("saved element %d in index %d for item %d\n", item, (index - 1)*elements +i, index);
+                table[(ind - 1) * elements + i] = item;
+                saved[ind-1] = 1;
+                ////printf("ST saved element %d in index %d for item %d\n", item, (index - 1)*elements +i, index);
             }
-            //printf("received item %d for storage\n", index);
+            ////printf("ST received item %d for storage\n", index);
         } //receiveing
         if (status.MPI_TAG == 2)
         {
-        
-        
-            for (int i = 0; i < elements; i++)
-            {
-                item = *(table + (index - 1) * elements + i);
-                
-                MPI_Send(&item, 1, MPI_INT, status.MPI_SOURCE, 2, MPI_COMM_WORLD);
+
+            //printf("saved has %d\n", saved[ind-1]);
+
+            if (saved[ind-1]==0){
+
+                MPI_Send(&saved[ind-1], 1, MPI_INT, status.MPI_SOURCE, 2, MPI_COMM_WORLD);
+
+                //printf("STORAGE DID NOT HAVE IT\n");
+
             }
-            //printf("storage sent item %d to node %d\n", index, status.MPI_SOURCE);
+
+
+            if (saved[ind-1]==1){
+
+                MPI_Send(&saved[ind-1], 1, MPI_INT, status.MPI_SOURCE, 2, MPI_COMM_WORLD);
+                //printf("STORAGE HAS IT\n");
+
+        
+                 for (int i = 0; i < elements; i++)
+                {
+
+                     item = table[(ind - 1) * elements + i];
+                
+                     MPI_Send(&item, 1, MPI_INT, status.MPI_SOURCE, 2, MPI_COMM_WORLD);
+
+                }
+
+                //printf("ST storage sent item %d to node %d\n", ind, status.MPI_SOURCE);
+
+            }
+            
         } //sending
     }     //while
 
@@ -1515,7 +1618,7 @@ int *preprocess_ABC(float *item, int elements, float average)
 int *preprocess_SAX(float *item, int elements, int num_symbols, int size, int rank, int word_length)
 {
 
-    int w = elements / word_length;
+    int w = (int) (elements / word_length);
     float *ave;
     ave = (float *)malloc(sizeof(float) * w);
 
@@ -1532,7 +1635,7 @@ int *preprocess_SAX(float *item, int elements, int num_symbols, int size, int ra
         {
             sum = sum + item[ind + j];
         }
-        ave[i] = sum / word_length;
+        ave[i] = (float) (sum / word_length);
         ind = ind + word_length;
         sum = 0;
     }
@@ -1543,7 +1646,7 @@ int *preprocess_SAX(float *item, int elements, int num_symbols, int size, int ra
         count++;
     }
 
-    ave[w - 1] = sum / count;
+    ave[w - 1] = (float)(sum / count);
 
     //malloc breakpoints
 
@@ -1554,28 +1657,28 @@ int *preprocess_SAX(float *item, int elements, int num_symbols, int size, int ra
 
     MPI_Send(&rank, 1, MPI_INT, size - 4, 6, MPI_COMM_WORLD);
 
-    for (int i = 0; i < num_symbols - 1; i++)
+    for (int i = 0; i < (num_symbols - 1); i++)
     {
 
         MPI_Recv(&breakpoints[i], 1, MPI_FLOAT, size - 4, 6, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     }
     
-    //printf("received breakpoints\n");
+    ////printf("received breakpoints\n");
 
     //malloc int[] data of size elements
 
     int *res;
     res = (int *)malloc(sizeof(int) * w);
     
-    //printf("the number of words is %d\n", w);
+    ////printf("the number of words is %d\n", w);
 
     for (int k = 0; k < w; k++)
     {
         res[k] = num_symbols - 1;
-        //printf("loop\n");
+        ////printf("loop\n");
     }
     
-    //printf("the number of words is %d\n", w);
+    ////printf("the number of words is %d\n", w);
 
     for (int i = 0; i < w; i++)
     {
@@ -1662,19 +1765,21 @@ void preprocess_SSH(int rank, int size, int index, float *data, int elements, in
 
     int l = size_shingled / 2;
     
-    //printf("L is %d\n", l);
+    ////printf("L is %d\n", l);
 
     for (int i = 0; i < num_hash; i++)
     {
-    //printf("I is %d\n", i);
+    ////printf("I is %d\n", i);
     
 
         for (int j = 0; j < l; j++)
         {
-        //printf("J is %d\n", j);
+        ////printf("J is %d\n", j);
+            ////printf("HERE trying to acess ind of %d\n", (i*l + j));
             int ind = floor(*(hash_matrix + i * l + j));
+            ////printf("HERE trying to acess ind of %d\n", (i*l + j));
             
-            //printf("IND is %d\n", ind);
+            ////printf("IND is %d\n", ind);
 
             if (*(hash_matrix + i * l + j) - ind < (float)shingled[ind] / (float)n_shingles)
             {
@@ -1682,7 +1787,7 @@ void preprocess_SSH(int rank, int size, int index, float *data, int elements, in
                 //send the hash code j and item index to appropriate hashtable node i
                 MPI_Send(&j, 1, MPI_INT, i, 9, MPI_COMM_WORLD);
                 
-                //printf("ssh for %d sending hash value %d for hash %d\n", rank, j, i);
+                ////printf("ssh for %d sending hash value %d for hash %d\n", rank, j, i);
                 //if did not find the hash - not sending anything
                 break;
             }
@@ -1714,14 +1819,14 @@ void preprocess_SSH(int rank, int size, int index, float *data, int elements, in
 void worker_fn(int rank, int flag, int size_hash, int step_hash, int num_symbols, int word_length, float average, float sd, int size, int elements, int num_hash)
 {
 
-    printf("worker %d starting\n", rank);
+    //printf("worker %d starting\n", rank);
 
     float *stored;
     stored = (float *)malloc(sizeof(float) * elements);
 
     int item_index;
 
-    int length = elements / word_length;
+    int length = (int) (elements / word_length);
 
     //int[elements] ABC;
     int *ABC;
@@ -1741,25 +1846,25 @@ void worker_fn(int rank, int flag, int size_hash, int step_hash, int num_symbols
     int *hash;
     hash = (int *)malloc(sizeof(int) * num_hash);
 
-    //printf("flag is %d\n", flag);
+    ////printf("flag is %d\n", flag);
     
 
 
     if (flag != 2)
     {
         //send request to hash node
-        //printf("size - 4 is %d\n", size-4);
+        ////printf("size - 4 is %d\n", size-4);
         MPI_Send(&rank, 1, MPI_INT, size - 4, 4, MPI_COMM_WORLD);
         //MPI_Recv(&hash, num_hash, MPI_INT, size-4, 4, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        //printf("worker %d requested hash\n",rank);
+        ////printf("worker %d requested hash\n",rank);
         for (int i = 0; i < num_hash; i++)
         {
             MPI_Recv(&hash[i], 1, MPI_INT, size - 4, 4, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            //printf("hash value %d is %d for worker %d\n", i, hash[i], rank);
+            //printf("CHECK hash value %d is %d for worker %d\n", i, hash[i], rank);
         }
     }
     
-     //printf("WORKER\n");
+     ////printf("WORKER\n");
 
     int l = pow(2, num_symbols) / 2;
 
@@ -1778,14 +1883,14 @@ void worker_fn(int rank, int flag, int size_hash, int step_hash, int num_symbols
             
              for (int j = 0; j < l; j++)
                 {
-                    //printf("RECV %d %d %d\n", rank, i, j);
+                    ////printf("RECV %d %d %d\n", rank, i, j);
                  MPI_Recv(&hash_matrix[i*l + j], 1, MPI_FLOAT, size - 4, 6, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             }
         }
     }
     //*(hash_matrix + i* l + j)
     
-    //printf("WORKER %d here \n", rank);
+    ////printf("WORKER %d here \n", rank);
     //malloc float[size_hash] vector;//for SSH
     float *vector;
     vector = (float *)malloc(sizeof(float) * size_hash);
@@ -1805,30 +1910,30 @@ void worker_fn(int rank, int flag, int size_hash, int step_hash, int num_symbols
 
     while (1)
     {
-        //printf("WORKER %d sending...\n", rank);
+        ////printf("WORKER %d sending...\n", rank);
         MPI_Send(&rank, 1, MPI_INT, 0, 8, MPI_COMM_WORLD);
-        printf("worker %d requested data\n",rank);
+        //printf("worker %d requested data\n",rank);
         //send message to manager that im available
         //use tag 8
 
         //if tag is 0 then shut down
         MPI_Recv(&item_index, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 
-        //printf("WORKER %d received %d from %d with tag %d\n", rank, item_index, status.MPI_SOURCE, status.MPI_TAG);
+        ////printf("WORKER %d received %d from %d with tag %d\n", rank, item_index, status.MPI_SOURCE, status.MPI_TAG);
 
         if (status.MPI_TAG == 0)
         {
-            //printf("worker %d breaking \n", rank);
+            ////printf("worker %d breaking \n", rank);
             break;
         } //if shut down
         
-        //printf("worker %d processing item %d\n", rank, item_index);
+        printf("worker %d processing item %d\n", rank, item_index);
 
         for (int i = 0; i < elements; i++)
         {
 
             MPI_Recv(&stored[i], 1, MPI_FLOAT, 0, 8, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            //printf("worker %f received data\n",stored[i]);
+            ////printf("worker %f received data\n",stored[i]);
         } //for recieving item for preprocessing
 
         //preprocess
@@ -1841,10 +1946,10 @@ void worker_fn(int rank, int flag, int size_hash, int step_hash, int num_symbols
         else if (flag == 1)
         {
             stored = normalize(stored, size, average, sd);
-            //printf("normalized\n");
+            ////printf("normalized\n");
             //this will be shorter
             SAX = preprocess_SAX(stored, elements, num_symbols, size, rank, word_length);
-            //printf("preprocessed\n");
+            printf("preprocessed %d\n", item_index);
         } //SAX
 
         //receive index of the data item INT
@@ -1859,7 +1964,7 @@ void worker_fn(int rank, int flag, int size_hash, int step_hash, int num_symbols
 
         /////////////////////////////////////////////////////////////////////
         //send preprocessed item to storage node with its index
-        //printf("worker sending item %d to storage\n", item_index);
+        ////printf("worker sending item %d to storage\n", item_index);
 
         if (flag == 0)
         {
@@ -1867,7 +1972,7 @@ void worker_fn(int rank, int flag, int size_hash, int step_hash, int num_symbols
             for (int i = 0; i < elements; i++)
             {
                 MPI_Send(&ABC[i], 1, MPI_INT, size - 5, 3, MPI_COMM_WORLD);
-                //printf("processed data is %d\n", ABC[i]);
+                ////printf("processed data is %d\n", ABC[i]);
             } //end sending preprocessed item to storage
             printf("ABC sent for storage\n");
         }
@@ -1880,7 +1985,7 @@ void worker_fn(int rank, int flag, int size_hash, int step_hash, int num_symbols
                 MPI_Send(&SAX[i], 1, MPI_INT, size - 5, 3, MPI_COMM_WORLD);
             } //end sending preprocessed item to storage
 
-            printf("SAX sent for storage\n");
+            printf("SAX sent for storage %d\n", item_index);
         }
 
         /////////////////////////////////////////////////////////////////////
@@ -1904,10 +2009,10 @@ void worker_fn(int rank, int flag, int size_hash, int step_hash, int num_symbols
         {
             int data = 1;
 
-            for (int j = 1; j <= num_hash; j++)
+            for (int j = 0; j < num_hash; j++)
             {
 
-                //printf("worker %d hash %d on item %d\n",rank, j, item_index);
+                ////printf("worker %d hash %d on item %d\n",rank, j, item_index);
 
                 //create code
                 //code = stored[hash[j]:hash[j]+size_hash-1];
@@ -1916,7 +2021,12 @@ void worker_fn(int rank, int flag, int size_hash, int step_hash, int num_symbols
 
                     if (flag == 1)
                     {
+                        //printf("THIS WORKS\n");
+                        printf("ACCESSING %d\n", (hash[j]+i));
+                        //printf("ACCESING HASH IS %d for hash %d index %d worker %d\n", hash[j], j, i, rank);
+                        //printf("LENGTH is %d", length);
                         code[i] = SAX[hash[j] + i];
+                        //printf("THIS DOES NOT WORK\n");
                     }
 
                     if (flag == 0)
@@ -1926,25 +2036,25 @@ void worker_fn(int rank, int flag, int size_hash, int step_hash, int num_symbols
                 } //for sending hash code
 
                 //send hash and item index to hashtable
-                int dest = j;
+                int dest = j+1;
 
                 MPI_Send(&item_index, 1, MPI_INT, dest, 9, MPI_COMM_WORLD);
-                //printf("hash code %d ", j);
+                ////printf("hash code %d ", j);
                 for (int i = 0; i < size_hash; i++)
                 {
-                    //printf("%d", code[i]);
+                    ////printf("%d", code[i]);
                     MPI_Send(&code[i], 1, MPI_INT, dest, 9, MPI_COMM_WORLD);
-                    //printf("worker %d sending hashes on item %d, with index %d\n", rank, item_index, j);
+                    ////printf("worker %d sending hashes on item %d, with index %d\n", rank, item_index, j);
                 } //for sending hash code
-                  //printf("\n");
+                  ////printf("\n");
 
             } //for each hash
-            printf("worker %d done hashes on item %d\n", rank, item_index);
+            //printf("worker %d done hashes on item %d\n", rank, item_index);
         } //hash and send for abc and sax
-        //printf("worker %d looking for more work\n", rank);
+        ////printf("worker %d looking for more work\n", rank);
     } //while
 
-    //printf("worker %d done\n", rank);
+    ////printf("worker %d done\n", rank);
     
     int data = 0;
 
@@ -2068,11 +2178,15 @@ int my_main(int argc, char **argv)
         }
         else if (flag == 1)
         {
+            //int words = elements/word_length;
+            //printf("NUMBER OF WORDS %d\n", words);
             storage_fn(n, elements / word_length);
         }
         else
         { 
-       // printf("VALUE is %d\n", (int) pow(2, num_symbols));
+       // //printf("VALUE is %d\n", (int) pow(2, num_symbols));
+            //int shingles = (int) pow(2, num_symbols);
+            //printf("NUMBER OF SHINGLES %d\n", shingles);
             storage_fn(n, (int) pow(2, num_symbols));
         }
     }

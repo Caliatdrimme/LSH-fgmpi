@@ -1,4 +1,0 @@
-bucket 2 1 1
-bucket 2 10 2
-bucket 1 1 1 2
-sim 1 2 2.100000

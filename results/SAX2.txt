@@ -1,5 +1,0 @@
-hash code size is 1
-bucket 1 2 1
-bucket 1 0 2
-bucket 2 0 1 2
-sim 1 2 2.118726
