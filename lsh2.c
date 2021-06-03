@@ -13,28 +13,9 @@
 //#define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 #define RANK_MAIN_PROCESS 0
-#define RANK_STORAGE 1
-#define RANK_SIMILARITY 2
-#define RANK_HASH_TABLE 3
-
-/*
-#define CMD_START 1
-#define CMD_STOP 2
-#define CMD_CONFIG_HASH 3
-#define CMD_WORKER_DATA 4
-#define CMD_WORKER_AVAILABLE 5
-#define CMD_ABC_STORE 6
-*/
-
-/*
-#define TAG_STOP 255
-#define TAG_WORKER_HASH 1
-#define TAG_WORKER_AVAILABLE 2
-#define TAG_WORKER_LINE_INDEX 3
-#define TAG_WORKER_LINE_DATA 4
-#define TAG_STORAGE_LINE_INDEX 5
-#define TAG_STORAGE_DATA
-*/
+//#define RANK_STORAGE 1
+#define RANK_SIMILARITY 1
+#define RANK_HASH_TABLE 2
 
 typedef enum {
 	TAG_WORKER_HASH,
@@ -45,6 +26,9 @@ typedef enum {
 	TAG_STORAGE_DATA,
 	TAG_HASHTABLE_LINE_INDEX, // 6
 	TAG_HASHTABLE_LINE_DATA,
+	TAG_SIMILARITY_PAIR_1,
+	TAG_SIMILARITY_PAIR_2,
+	TAG_SIMILARITY_WRITE,
 
 	TAG_STOP
 } tag_t;
@@ -53,7 +37,8 @@ typedef enum {
 #define METHOD_SAX 1
 #define METHOD_SSH 2
 
-#define LOG_LEVEL_DEBUG 0
+#define LOG_LEVEL_DEBUG 1
+#define LOG_LEVEL_TRACE 2
 
 #define LOG_LEVEL LOG_LEVEL_DEBUG
 
@@ -315,11 +300,11 @@ void process_data_window(struct Config *config) {
 	}
 }
 
-char *abc_preprocess(float *item, int elements, float average)
+int *abc_preprocess(float *item, int elements, float average)
 {
 
-    char *data;
-    data = (char *)malloc(sizeof(char) * elements);
+    int *data;
+    data = (int *)malloc(sizeof(int) * elements);
 
     for (int i = 0; i < elements; i++)
     {
@@ -746,18 +731,62 @@ void main_process_fn(struct Config *config) {
 
     //process_data_window(config);
 
-	usleep(11*1000*1000);
+	usleep(5*1000*1000);
+
+	MPI_Send(NULL, 0, MPI_INT, RANK_SIMILARITY, TAG_SIMILARITY_WRITE, MPI_COMM_WORLD);
+
+	usleep(5*1000*1000);
 
 	stopAll(config);
 
 
 }
 
+guint g_array_hash(gconstpointer  v) {
+
+	int length = *(int *)v;
+
+	int hash = 17;
+	int *position = (int *)v;
+	position ++;
+	for (int i = 0; i < length; i++) {
+		int value = *position++;
+	    hash = hash * 31 + value;
+	}
+	return hash;
+}
+
+gboolean g_array_equal(gconstpointer a, gconstpointer b) {
+
+	int *array_a = (int *)a;
+	int *array_b = (int *)b;
+
+	int a_length = *array_a;
+	int b_length = *array_b;
+
+	if (a_length!=b_length) {
+		return FALSE;
+	}
+
+	array_a++;
+	array_b++;
+
+	for (int i=0; i<a_length; i++) {
+		if (*array_a++ != *array_b++) {
+			return FALSE;
+		}
+	}
+
+	return TRUE;
+}
+
 void abc_worker_hashtable(struct Config *config) {
+
+	GHashTable* hash = g_hash_table_new(g_array_hash, g_array_equal);
 
 	int running=1;
 
-	char *data = malloc(sizeof(int) * config->size_hash * config->n );
+	//char *data = malloc(sizeof(int) * config->size_hash * config->n );
 
 	while (running) {
 
@@ -767,7 +796,9 @@ void abc_worker_hashtable(struct Config *config) {
 		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
 
 		if (flag) {
-			my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+			if (LOG_LEVEL==LOG_LEVEL_TRACE) {
+				my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+			}
 
 			switch((tag_t)status.MPI_TAG) {
 				case TAG_STOP:
@@ -783,16 +814,41 @@ void abc_worker_hashtable(struct Config *config) {
 
 					my_log(config, "Received line index: %d from %d", line_index, status.MPI_SOURCE);
 
-					MPI_Recv(&data[line_index*config->size_hash], config->size_hash, MPI_INT, status.MPI_SOURCE, TAG_HASHTABLE_LINE_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+					int *data = malloc(sizeof(int) * (config->size_hash + 1));
+
+					*data = config->size_hash;
+
+					MPI_Recv(&data[1], config->size_hash, MPI_INT, status.MPI_SOURCE, TAG_HASHTABLE_LINE_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 					my_log(config, "Hash code data received; line: %d ", line_index);
 
 			        if (LOG_LEVEL == LOG_LEVEL_DEBUG) {
 			        	my_log(config, "Data");
-			        	for (int i=0; i<config->size_hash; i++) {
-			        		printf("%d ", data[line_index*config->size_hash + i]);
+			        	for (int i=0; i<config->size_hash+1; i++) {
+			        		printf("%d ", data[i]);
 			        	}
 			        	printf("\n");
 			        }
+
+			        GSList *list = g_hash_table_lookup(hash, data);
+
+			        if (list!=NULL) {
+			        	GSList *element = list;
+			        	while (element != NULL) {
+			        		long value = (long)element->data;
+
+			        		int value_int = (int) value;
+
+			        		MPI_Send(&line_index, 1, MPI_INT, RANK_SIMILARITY, TAG_SIMILARITY_PAIR_1, MPI_COMM_WORLD);
+			        		MPI_Send(&value_int, 1, MPI_INT, RANK_SIMILARITY, TAG_SIMILARITY_PAIR_2, MPI_COMM_WORLD);
+
+			        		element = element->next;
+			        	}
+			        }
+
+			        long li = line_index;
+			        list = g_slist_prepend(list, (gpointer)li);
+
+		        	g_hash_table_insert(hash, data, list);
 
 					break;
 				}
@@ -811,17 +867,53 @@ void abc_worker_hashtable(struct Config *config) {
 
 	} // running
 
-	free(data);
 
 } // abc_worker_hashtable
 
-void abc_worker_storage(struct Config *config) {
+//calculates the similarity by ABC
+float abc_sim(int *item1, int *item2, float sim, int elements)
+{
+
+    int c = 0;
+    float similarity = 0;
+    for (int i = 0; i < elements; i++)
+    {
+        if (item1[i] == item2[i])
+        {
+            similarity = similarity + pow((1 + sim), c);
+            c = c + 1;
+        }
+        else
+        {
+            c = 0;
+        }
+    }
+    return similarity;
+
+} //ABC_sim
+
+
+void abc_worker_similarity(struct Config *config) {
 
 	int running=1;
 
-	char *data = malloc(sizeof(char) * config->elements * config->n );
+	int *data = malloc(sizeof(int) * config->elements * config->n );
+
+	int line_count = 0;
+
+	int processed_pairs[config->n][config->n];
+
+	for (int i=0; i<config->n; i++) {
+		for (int j=0; j<config->n; j++) {
+			processed_pairs[i][j] = 0;
+		}
+	}
+
+	float similarity_matrix[config->n][config->n];
 
 	while (running) {
+
+		//my_log(config, "Probing...");
 
 		int flag;
 		MPI_Status status;
@@ -829,7 +921,9 @@ void abc_worker_storage(struct Config *config) {
 		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
 
 		if (flag) {
-			my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+			if (LOG_LEVEL==LOG_LEVEL_TRACE) {
+				my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+			}
 
 			switch((tag_t)status.MPI_TAG) {
 				case TAG_STOP:
@@ -843,8 +937,11 @@ void abc_worker_storage(struct Config *config) {
 					int line_index;
 					MPI_Recv(&line_index, 1, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-					MPI_Recv(&data[line_index*config->elements], config->elements, MPI_CHAR, status.MPI_SOURCE, TAG_STORAGE_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-					my_log(config, "Storage data received; line: %d ", line_index);
+					MPI_Recv(&data[line_index*config->elements], config->elements, MPI_INT, status.MPI_SOURCE, TAG_STORAGE_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+			        line_count++;
+
+					my_log(config, "Storage data received; line: %d line_count: %d", line_index, line_count);
 
 			        if (LOG_LEVEL == LOG_LEVEL_DEBUG) {
 			        	my_log(config, "Data");
@@ -854,7 +951,62 @@ void abc_worker_storage(struct Config *config) {
 			        	printf("\n");
 			        }
 
+			        my_log(config, "end of TAG_STORAGE_LINE_INDEX");
 
+					break;
+				}
+
+				case TAG_SIMILARITY_PAIR_1: {
+
+					//my_log(config, "start of TAG_SIMILARITY_PAIR_1");
+
+					int line1;
+					int line2;
+
+					MPI_Recv(&line1, 1, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+					MPI_Recv(&line2, 1, MPI_INT, status.MPI_SOURCE, TAG_SIMILARITY_PAIR_2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+					my_log(config, "Pair received: %d & %d from %d", line1, line2, status.MPI_SOURCE);
+
+					if (processed_pairs[line1][line2] == 1) {
+						my_log(config, "The pair already processed");
+					}
+					else {
+						processed_pairs[line1][line2] = 1;
+						processed_pairs[line2][line1] = 1;
+
+						float similarity = abc_sim(&data[line1*config->elements], &data[line2*config->elements], config->sim, config->elements);
+
+						similarity_matrix[line1][line2] = similarity;
+						similarity_matrix[line2][line1] = similarity;
+					}
+
+					break;
+				}
+
+				case TAG_SIMILARITY_WRITE: {
+
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+					my_log(config, "Writing...");
+
+					char name[1000];
+
+					sprintf(name, "similarity_abc_%05d.csv", config->trial);
+
+					FILE *fp;
+
+				    fp = fopen(name, "w");
+
+				    fprintf(fp, "HASH_SIZE, LINE_1, LINE_2, SIMILARITY\n");
+
+					for (int i=0; i<config->n; i++) {
+						for (int j=0; j<i; j++) {
+							fprintf(fp, "%d, %d, %d, %f\n", config->size_hash, i, j, similarity_matrix[i][j]);
+						}
+					}
+
+					fclose(fp);
 					break;
 				}
 
@@ -867,6 +1019,7 @@ void abc_worker_storage(struct Config *config) {
 		}
 		else {
 			usleep(1000L);
+			//usleep(1000L * 1000L * 10);
 		}
 
 
@@ -888,7 +1041,9 @@ void abc_worker(struct Config *config) {
 		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
 
 		if (flag) {
-			my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+			if (LOG_LEVEL==LOG_LEVEL_TRACE) {
+				my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+			}
 
 			switch((tag_t)status.MPI_TAG) {
 				case TAG_STOP:
@@ -922,11 +1077,11 @@ void abc_worker(struct Config *config) {
 			        	printf("\n");
 			        }
 
-			        char *preprocessed = abc_preprocess(data, config->elements, config->average);
+			        int *preprocessed = abc_preprocess(data, config->elements, config->average);
 
-			        MPI_Send(&line_index, 1, MPI_INT, RANK_STORAGE, TAG_STORAGE_LINE_INDEX, MPI_COMM_WORLD);
+			        MPI_Send(&line_index, 1, MPI_INT, RANK_SIMILARITY, TAG_STORAGE_LINE_INDEX, MPI_COMM_WORLD);
 
-			        MPI_Ssend(preprocessed, config->elements, MPI_CHAR, RANK_STORAGE, TAG_STORAGE_DATA, MPI_COMM_WORLD);
+			        MPI_Ssend(preprocessed, config->elements, MPI_INT, RANK_SIMILARITY, TAG_STORAGE_DATA, MPI_COMM_WORLD);
 
 			        // calculate the hash codes and send them to the hash table
 
@@ -942,7 +1097,7 @@ void abc_worker(struct Config *config) {
 			        		hash_code[i] = preprocessed[substring_start + i];
 			        	}
 
-			        	MPI_Send(&hash_table_index, 1, MPI_INT, RANK_HASH_TABLE+hash_table_index, TAG_HASHTABLE_LINE_INDEX, MPI_COMM_WORLD);
+			        	MPI_Send(&line_index, 1, MPI_INT, RANK_HASH_TABLE+hash_table_index, TAG_HASHTABLE_LINE_INDEX, MPI_COMM_WORLD);
 			        	MPI_Send(&hash_code, config->size_hash, MPI_INT, RANK_HASH_TABLE+hash_table_index, TAG_HASHTABLE_LINE_DATA, MPI_COMM_WORLD);
 			        }
 
@@ -982,7 +1137,9 @@ void process_requests(struct Config *config) {
 		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
 
 		if (flag) {
-			my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+			if (LOG_LEVEL==LOG_LEVEL_TRACE) {
+				my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+			}
 
 			//int line_index;
 			//float *data = (float *) malloc(config->elements * sizeof(float));
@@ -1050,17 +1207,7 @@ void process_requests(struct Config *config) {
 
 int main(int argc, char **argv) {
 
-	GHashTable* hash = g_hash_table_new(g_str_hash, g_str_equal);
-
-	g_hash_table_insert(hash,"Jazzy","Cheese");
-	    g_hash_table_insert(hash,"Mr Darcy","Treats");
-
-	    printf("There are %d keys in the hash table\n",
-	        g_hash_table_size(hash));
-
-	    printf("Jazzy likes %s\n",g_hash_table_lookup(hash,"Jazzy"));
-
-	    g_hash_table_destroy(hash);
+	// --oversubscribe -v -output-filename ~/lsh_log
 
     //initialize
     MPI_Init(&argc, &argv);
@@ -1106,16 +1253,18 @@ int main(int argc, char **argv) {
     		main_process_fn(&config);
     		break;
 
+/*
     	case RANK_STORAGE:
     		config.process_name = "Storage";
     		my_log(&config, "Start");
     		abc_worker_storage(&config);
     		break;
+*/
 
     	case RANK_SIMILARITY:
     		config.process_name = "Similarity";
     		my_log(&config, "Start");
-    		process_requests(&config);
+    		abc_worker_similarity(&config);
     		break;
 
     	default:
