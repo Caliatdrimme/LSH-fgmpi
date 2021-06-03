@@ -29,6 +29,7 @@ typedef enum {
 	TAG_SIMILARITY_PAIR_1,
 	TAG_SIMILARITY_PAIR_2,
 	TAG_SIMILARITY_WRITE,
+	TAG_WORK_COMPLETE,
 
 	TAG_STOP
 } tag_t;
@@ -652,7 +653,6 @@ void abc_main_process(struct Config *config) {
 	log_hash(config);
 
     for (int i=0; i<config->worker_count; i++) {
-	    //MPI_Send(&cmd_config_hash, 1, MPI_INT, config->rank_worker_start+i, 0, MPI_COMM_WORLD);
     	MPI_Send(config->hash, config->num_hash, MPI_INT, config->rank_worker_start+i, TAG_WORKER_HASH, MPI_COMM_WORLD);
     }
 
@@ -677,6 +677,55 @@ void abc_main_process(struct Config *config) {
 
     }
 
+    // tell the workers we are done
+    for (int i=0; i<config->worker_count; i++) {
+    	MPI_Send(NULL, 0, MPI_INT, config->rank_worker_start+i, TAG_WORK_COMPLETE, MPI_COMM_WORLD);
+    }
+
+	int running=1;
+
+	// wait for work complete from similarity
+
+	while (running) {
+
+		int flag;
+		MPI_Status status;
+
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+
+		if (flag) {
+			if (LOG_LEVEL==LOG_LEVEL_TRACE) {
+				my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+			}
+
+			switch((tag_t)status.MPI_TAG) {
+
+				case TAG_WORKER_AVAILABLE: {
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					break;
+				}
+
+				case TAG_WORK_COMPLETE: {
+
+					my_log(config, "Work complete from similarity");
+
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					running = 0;
+
+			        break;
+				}
+
+				default:
+					my_log(config, "Unexpected message: %d ", status.MPI_TAG);
+
+			}
+
+		}
+		else {
+			usleep(1000L);
+		}
+
+	}
 
 }
 
@@ -729,15 +778,11 @@ void main_process_fn(struct Config *config) {
     }
 */
 
-    //process_data_window(config);
+	//MPI_Send(NULL, 0, MPI_INT, RANK_SIMILARITY, TAG_SIMILARITY_WRITE, MPI_COMM_WORLD);
 
-	usleep(5*1000*1000);
+	//usleep(5*1000*1000);
 
-	MPI_Send(NULL, 0, MPI_INT, RANK_SIMILARITY, TAG_SIMILARITY_WRITE, MPI_COMM_WORLD);
-
-	usleep(5*1000*1000);
-
-	stopAll(config);
+	//stopAll(config);
 
 
 }
@@ -787,6 +832,8 @@ void abc_worker_hashtable(struct Config *config) {
 	int running=1;
 
 	//char *data = malloc(sizeof(int) * config->size_hash * config->n );
+
+	int work_complete_count=0;
 
 	while (running) {
 
@@ -853,6 +900,23 @@ void abc_worker_hashtable(struct Config *config) {
 					break;
 				}
 
+				case TAG_WORK_COMPLETE: {
+
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+
+					my_log(config, "Work complete from: %d", status.MPI_SOURCE);
+
+					work_complete_count++;
+					if (work_complete_count>=config->worker_count) {
+						my_log(config, "All workers are done; sending work complete to similarity");
+				        MPI_Send(NULL, 0, MPI_INT, RANK_SIMILARITY, TAG_WORK_COMPLETE, MPI_COMM_WORLD);
+				        running = 0;
+					}
+
+
+			        break;
+				}
+
 				default:
 
 					my_log(config, "Unexpected message: %d ", status.MPI_TAG);
@@ -910,6 +974,8 @@ void abc_worker_similarity(struct Config *config) {
 	}
 
 	float similarity_matrix[config->n][config->n];
+
+	int work_complete_count=0;
 
 	while (running) {
 
@@ -984,29 +1050,49 @@ void abc_worker_similarity(struct Config *config) {
 					break;
 				}
 
+				case TAG_WORK_COMPLETE: {
+
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+
+					my_log(config, "Work complete from: %d", status.MPI_SOURCE);
+
+					work_complete_count++;
+					if (work_complete_count>=config->num_hash) {
+						my_log(config, "All hash tables are done; writing and sending work complete to main process");
+
+						my_log(config, "Writing...");
+
+						char name[1000];
+
+						sprintf(name, "similarity_abc_%05d.csv", config->trial);
+
+						FILE *fp;
+
+					    fp = fopen(name, "w");
+
+					    fprintf(fp, "HASH_SIZE, LINE_1, LINE_2, SIMILARITY\n");
+
+						for (int i=0; i<config->n; i++) {
+							for (int j=0; j<i; j++) {
+								fprintf(fp, "%d, %d, %d, %f\n", config->size_hash, i, j, similarity_matrix[i][j]);
+							}
+						}
+
+						fclose(fp);
+
+						MPI_Send(NULL, 0, MPI_INT, RANK_MAIN_PROCESS, TAG_WORK_COMPLETE, MPI_COMM_WORLD);
+				        running = 0;
+					}
+
+
+			        break;
+				}
+
+
 				case TAG_SIMILARITY_WRITE: {
 
 					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-					my_log(config, "Writing...");
-
-					char name[1000];
-
-					sprintf(name, "similarity_abc_%05d.csv", config->trial);
-
-					FILE *fp;
-
-				    fp = fopen(name, "w");
-
-				    fprintf(fp, "HASH_SIZE, LINE_1, LINE_2, SIMILARITY\n");
-
-					for (int i=0; i<config->n; i++) {
-						for (int j=0; j<i; j++) {
-							fprintf(fp, "%d, %d, %d, %f\n", config->size_hash, i, j, similarity_matrix[i][j]);
-						}
-					}
-
-					fclose(fp);
 					break;
 				}
 
@@ -1018,6 +1104,7 @@ void abc_worker_similarity(struct Config *config) {
 
 		}
 		else {
+			// 1 millisecond
 			usleep(1000L);
 			//usleep(1000L * 1000L * 10);
 		}
@@ -1105,6 +1192,20 @@ void abc_worker(struct Config *config) {
 
 					free(data);
 					free(preprocessed);
+
+			        break;
+				}
+
+				case TAG_WORK_COMPLETE: {
+
+					my_log(config, "Work complete");
+
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					running = 0;
+
+			        for (int hash_table_index=0; hash_table_index<config->num_hash; hash_table_index++) {
+			        	MPI_Send(NULL, 0, MPI_INT, RANK_HASH_TABLE+hash_table_index, TAG_WORK_COMPLETE, MPI_COMM_WORLD);
+			        }
 
 			        break;
 				}
