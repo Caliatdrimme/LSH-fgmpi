@@ -1074,7 +1074,9 @@ void abc_worker_similarity(struct Config *config) {
 
 						for (int i=0; i<config->n; i++) {
 							for (int j=0; j<i; j++) {
-								fprintf(fp, "%d, %d, %d, %f\n", config->size_hash, i, j, similarity_matrix[i][j]);
+								if (processed_pairs[i][j]) {
+									fprintf(fp, "%d, %d, %d, %f\n", config->size_hash, i, j, similarity_matrix[i][j]);
+								}
 							}
 						}
 
