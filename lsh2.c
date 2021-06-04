@@ -19,16 +19,18 @@
 
 typedef enum {
 	TAG_WORKER_HASH,
+	TAG_WORKER_BREAKPOINTS,
 	TAG_WORKER_AVAILABLE,
 	TAG_WORKER_LINE_INDEX,
 	TAG_WORKER_LINE_DATA,
 	TAG_STORAGE_LINE_INDEX,
 	TAG_STORAGE_DATA,
-	TAG_HASHTABLE_LINE_INDEX, // 6
+	TAG_HASHTABLE_LINE_INDEX,
 	TAG_HASHTABLE_LINE_DATA,
 	TAG_SIMILARITY_PAIR_1,
 	TAG_SIMILARITY_PAIR_2,
 	TAG_SIMILARITY_WRITE,
+	TAG_SIMILARITY_DISTANCES,
 	TAG_WORK_COMPLETE,
 
 	TAG_STOP
@@ -62,6 +64,8 @@ struct Config {
     int num_symbols, word_length;
     float average, sd, sim;
 
+    int sax_word_count;
+
     int n;
 
     char* filename;
@@ -86,115 +90,6 @@ void freeConfig(struct Config *config) {
 		free(config->file_data.data);
 	}
 }
-
-typedef struct Hashtable
-{
-    int n;
-    int *codes;
-    int *counts;
-    int *items;
-    int index;
-    int c;
-} hashtable;
-
-/*
-//has to return n, codes, counts, items, index
-struct Hashtable append_to_table(struct Hashtable table, int hash, int item, int rank)
-{
-    //check if the hash code exists in the hash codes table
-    //if not resize all the tables
-    int ind = table.n;
-
-    for (int i = 0; i < table.n; i++)
-    {
-        if (table.codes[i] == hash)
-        {
-            ind = i;
-            break;
-        } //if found
-    }     //for searching hash code
-
-    if (ind == table.n)
-    {
-        table.n = table.n + 1;
-        table.codes = resize_table(table.codes, table.n);
-        table.counts = resize_table(table.counts, table.n);
-        table.counts[ind] = 0;
-
-        table.codes[ind] = hash;
-
-    //int c = table.counts[ind];
-    //printf("index %d and count %d\n", ind, c);
-
-        int s = 0;
-
-        for (int i = 0; i < table.n -1; i++)
-        {
-            // printf("here! table.index=%d\n", table.index);
-            s = s + table.counts[i];
-        } //for calculating size of items array
-
-        table.items = resize_table(table.items, s);
-
-        table.c = s;
-        // *(table.items + s) = item;
-        //printf("hashtable inserted item %d\n", item);
-        // printf("but not here\n");
-    } //if didnt find it need to resize
-
-    else
-    {
-        int s = 0;
-
-        for (int i = 0; i < table.n; i++)
-        {
-            s = s + table.counts[i];
-        } //for calculating size of items array
-
-        table.items = resize_table(table.items, s);
-
-        int t = 0;
-
-        for (int i = 0; i <= ind; i++)
-        {
-            t = t + table.counts[i];
-        } //for calculating size of items array before the newly inserted item
-
-        //move all items after it
-        for (int j = s; j > t; j--)
-        {
-            table.items[j] = table.items[j - 1];
-        }
-        //insert item
-        table.c = t;
-        //table.items[t] = item;
-        //printf("hashtable inserted item %d\n", item);
-    }
-
-    table.items[table.c] = item;
-    //printf("hashtable inserted item %d\n", item);
-     //printf("old table.index to %d\n", table.counts[ind]);
-    table.counts[ind] = table.counts[ind] + 1;
-    //printf("updated table.index to %d\n", table.counts[ind]);
-    //insert the hash code, item  at the right index, update count
-    table.index = ind;
-
-    int t = 0;
-
-    for (int i = 0; i < ind; i++)
-        {
-            t = t + table.counts[i];
-        } //for calculating size of items array before the newly inserted item
-
-    for (int i =0; i < table.counts[ind]; i++){
-        //printf("bucket %d has item %d for hash %d and code %d\n", ind, table.items[t+i], rank, table.codes[ind]);
-    }
-
-
-    return table;
-} //append to table
-
-*/
 
 void my_log(struct Config *config, char* s, ...) {
 
@@ -265,6 +160,8 @@ void init_config(struct Config *config, char **argv) {
 	config->process_name = malloc(100 * sizeof(char));
 
 	config->process_name[0] = 0;
+
+	config->sax_word_count = config->elements / config->word_length;
 
 }
 
@@ -633,18 +530,6 @@ float *create_distances(int num_symbols, float *breakpoints)
 
 */
 
-int calc_worker_data_packed_size(struct Config *config) {
-	int buf_size_1;
-	MPI_Pack_size(1, MPI_INT, MPI_COMM_WORLD, &buf_size_1);
-
-	int buf_size_2;
-	MPI_Pack_size(config->elements, MPI_FLOAT, MPI_COMM_WORLD, &buf_size_2);
-
-	int buf_size = buf_size_1+buf_size_2;
-
-	return buf_size;
-}
-
 void abc_main_process(struct Config *config) {
 	my_log(config, "METHOD_ABC");
 
@@ -676,6 +561,8 @@ void abc_main_process(struct Config *config) {
 	    line_index++;
 
     }
+
+	//usleep(10L*1000L*1000L);
 
     // tell the workers we are done
     for (int i=0; i<config->worker_count; i++) {
@@ -729,6 +616,166 @@ void abc_main_process(struct Config *config) {
 
 }
 
+float *sax_create_breakpoints(int num_symbols)
+{
+
+    //from 3 to 10 symbols
+    float breakpoints[8][9] = {{-0.43, 0.43, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+                               {-0.67, 0, 0.67, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+                               {-0.84, -0.25, 0.25, 0.84, 0.0, 0.0, 0.0, 0.0, 0.0},
+                               {-0.97, -0.43, 0, 0.43, 0.97, 0.0, 0.0, 0.0, 0.0},
+                               {-1.07, -0.57, -0.18, 0.18, 0.57, 1.07, 0.0, 0.0, 0.0},
+                               {-1.15, -0.67, -0.32, 0, 0.32, 0.67, 1.15, 0.0, 0.0},
+                               {-1.22, -0.76, -0.43, -0.14, 0.14, 0.43, 0.76, 1.22, 0.0},
+                               {-1.28, -0.84, -0.52, -0.25, 0, 0.25, 0.52, 0.84, 1.28}};
+
+    //return array of size num_symbols-1
+    //holds breakpoints as values
+    //to have equal areas under normal curve
+
+    float *breakpoints_sent;
+    breakpoints_sent = (float *)malloc(sizeof(float) * num_symbols - 1);
+
+    for (int i = 0; i < num_symbols - 1; i++)
+    {
+        breakpoints_sent[i] = breakpoints[num_symbols - 3][i];
+    }
+
+    return breakpoints_sent;
+
+} //create_breakpoints
+
+float *sax_create_distances(int num_symbols, float *breakpoints)
+{
+    //return num_symbolsXnum_symbols array that holds distances between symbols
+    //under the normal curve
+
+    float *distances = (float *)malloc(num_symbols * num_symbols * sizeof(float));
+
+    for (int i = 0; i < num_symbols; i++)
+    {
+        for (int j = 0; j < num_symbols; j++)
+        {
+            if ((abs(i - j)) <= 1)
+            {
+                *(distances + i * num_symbols + j) = 0;
+            } //if
+
+            else
+            {
+
+                int mx = MAX(i, j) - 1;
+                int mn = MIN(i, j);
+
+                *(distances + i * num_symbols + j) = breakpoints[mx] - breakpoints[mn];
+
+            } //else
+        }
+    }
+
+    return distances;
+
+} //create_distances
+
+
+void sax_main_process(struct Config *config) {
+	my_log(config, "METHOD_SAX");
+
+	config->hash = random_indexes(config->num_hash, config->elements / config->word_length, config->size_hash);
+
+	log_hash(config);
+
+    for (int i=0; i<config->worker_count; i++) {
+    	MPI_Send(config->hash, config->num_hash, MPI_INT, config->rank_worker_start+i, TAG_WORKER_HASH, MPI_COMM_WORLD);
+    }
+
+    config->breakpoints = sax_create_breakpoints(config->num_symbols);
+
+    for (int i=0; i<config->worker_count; i++) {
+    	MPI_Send(config->breakpoints, config->num_symbols-1, MPI_FLOAT, config->rank_worker_start+i, TAG_WORKER_BREAKPOINTS, MPI_COMM_WORLD);
+    }
+
+    config->distances = sax_create_distances(config->num_symbols, config->breakpoints);
+
+	MPI_Send(config->distances, config->num_symbols*config->num_symbols, MPI_FLOAT, RANK_SIMILARITY, TAG_SIMILARITY_DISTANCES, MPI_COMM_WORLD);
+
+
+    int line_index = 0;
+
+    while (line_index < config->file_data.line_count) {
+
+    	MPI_Status mpi_status;
+
+    	my_log(config, "Waiting for a worker");
+
+    	MPI_Recv(NULL, 0, MPI_INT, MPI_ANY_SOURCE, TAG_WORKER_AVAILABLE, MPI_COMM_WORLD, &mpi_status);
+
+    	my_log(config, "Worker available: %d for line: %d", mpi_status.MPI_SOURCE, line_index);
+
+	    float *data = &config->file_data.data[line_index*config->file_data.column_count + config->start];
+
+	    MPI_Send(&line_index, 1, MPI_INT, mpi_status.MPI_SOURCE, TAG_WORKER_LINE_INDEX, MPI_COMM_WORLD);
+	    MPI_Send(data, config->elements, MPI_FLOAT, mpi_status.MPI_SOURCE, TAG_WORKER_LINE_DATA, MPI_COMM_WORLD);
+
+	    line_index++;
+
+    }
+
+	//usleep(10L*1000L*1000L);
+
+    // tell the workers we are done
+    for (int i=0; i<config->worker_count; i++) {
+    	MPI_Send(NULL, 0, MPI_INT, config->rank_worker_start+i, TAG_WORK_COMPLETE, MPI_COMM_WORLD);
+    }
+
+	int running=1;
+
+	// wait for work complete from similarity
+
+	while (running) {
+
+		int flag;
+		MPI_Status status;
+
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+
+		if (flag) {
+			if (LOG_LEVEL==LOG_LEVEL_TRACE) {
+				my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+			}
+
+			switch((tag_t)status.MPI_TAG) {
+
+				case TAG_WORKER_AVAILABLE: {
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					break;
+				}
+
+				case TAG_WORK_COMPLETE: {
+
+					my_log(config, "Work complete from similarity");
+
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					running = 0;
+
+			        break;
+				}
+
+				default:
+					my_log(config, "Unexpected message: %d ", status.MPI_TAG);
+
+			}
+
+		}
+		else {
+			usleep(1000L);
+		}
+
+	}
+
+}
+
+
 void main_process_fn(struct Config *config) {
 
 	my_log(config, "Cluster size: %d", config->cluster_size);
@@ -746,43 +793,13 @@ void main_process_fn(struct Config *config) {
     	case METHOD_ABC:
     		abc_main_process(config);
     		break;
+
+    	case METHOD_SAX:
+    		sax_main_process(config);
+    		break;
+
+
     }
-
-/*
-    switch (config->flag) {
-    	case METHOD_ABC:
-    		main_process_method_abc(config);
-    		break;
-
-    	case 1:
-    	    config->hash = random_indexes(config->num_hash, config->elements / config->word_length, config->size_hash);
-    	    // MPI_Send(&hash[i], 1, MPI_INT, dest, 4, MPI_COMM_WORLD);
-    	    config->breakpoints = create_breakpoints(config->num_symbols);
-    	    //MPI_Send(&breakpoints[i], 1, MPI_FLOAT, dest, 6, MPI_COMM_WORLD); length num_symbols
-    	    config->distances = create_distances(config->num_symbols, config->breakpoints);
-    	    //MPI_Send(&*(distances + s1 * config->num_symbols + s2), 1, MPI_FLOAT, status.MPI_SOURCE, 7, MPI_COMM_WORLD);
-    		break;
-
-    	case 2:
-    	    config->hash_SSH = random_vector(config->size_hash);
-    	    //MPI_Send(&hash[i], 1, MPI_FLOAT, dest, 4, MPI_COMM_WORLD);
-    	    //create perm num_hash X l floats random from 0 to 2**num_symbols
-
-    	    int k = pow(2, config->num_symbols);
-
-    	    int l = k / 2;
-
-    	    float *perm = create_random_matrix(config->num_hash, l, k);
-    	    //MPI_Send(&perm[i*l + j], 1, MPI_FLOAT, dest, 6, MPI_COMM_WORLD); i num_hash j l
-    		break;
-    }
-*/
-
-	//MPI_Send(NULL, 0, MPI_INT, RANK_SIMILARITY, TAG_SIMILARITY_WRITE, MPI_COMM_WORLD);
-
-	//usleep(5*1000*1000);
-
-	//stopAll(config);
 
 
 }
@@ -825,6 +842,7 @@ gboolean g_array_equal(gconstpointer a, gconstpointer b) {
 	return TRUE;
 }
 
+//same for SAX
 void abc_worker_hashtable(struct Config *config) {
 
 	GHashTable* hash = g_hash_table_new(g_array_hash, g_array_equal);
@@ -942,9 +960,12 @@ float abc_sim(int *item1, int *item2, float sim, int elements)
     float similarity = 0;
     for (int i = 0; i < elements; i++)
     {
+    	//printf("%d %d\n", item1[i], item2[i]);
+
         if (item1[i] == item2[i])
         {
             similarity = similarity + pow((1 + sim), c);
+            //printf("%f\n", similarity);
             c = c + 1;
         }
         else
@@ -1042,6 +1063,8 @@ void abc_worker_similarity(struct Config *config) {
 						processed_pairs[line2][line1] = 1;
 
 						float similarity = abc_sim(&data[line1*config->elements], &data[line2*config->elements], config->sim, config->elements);
+
+						my_log(config, "Similarity: %f", similarity);
 
 						similarity_matrix[line1][line2] = similarity;
 						similarity_matrix[line2][line1] = similarity;
@@ -1228,6 +1251,425 @@ void abc_worker(struct Config *config) {
 }
 
 
+//calculates the similarity by SAX
+//n is total elements, w is number of words after preprocessing
+float sax_sim(int *item1, int *item2, int n, int w, float *distances, int num_symbols)
+{
+
+    float one = sqrt((float)n / (float)w);
+
+    printf("n:%d w:%d  one:%f \n", n, w, one);
+
+    //printf("one is %f\n", one);
+
+    float sum = 0;
+    for (int i = 0; i < w; i++)
+    {
+
+        int ind1 = item1[i];
+
+        int ind2 = item2[i];
+
+        float dist = distances[ind1*num_symbols + ind2];
+
+        sum = sum + pow(dist, 2);
+
+        printf("sum is %f dist is %f for symbols %d %d\n", sum, dist, ind1, ind2);
+    }
+
+    float two = sqrt(sum);
+
+    //printf("two is %f\n", two);
+
+    return one * two;
+
+} //SAX_sim
+
+void sax_worker_similarity(struct Config *config) {
+
+	int running=1;
+
+	int *data = malloc(sizeof(int) * config->sax_word_count * config->n );
+
+	int line_count = 0;
+
+	int processed_pairs[config->n][config->n];
+
+	for (int i=0; i<config->n; i++) {
+		for (int j=0; j<config->n; j++) {
+			processed_pairs[i][j] = 0;
+		}
+	}
+
+	float similarity_matrix[config->n][config->n];
+
+	int work_complete_count=0;
+
+	while (running) {
+
+		//my_log(config, "Probing...");
+
+		int flag;
+		MPI_Status status;
+
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+
+		if (flag) {
+			if (LOG_LEVEL==LOG_LEVEL_TRACE) {
+				my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+			}
+
+			switch((tag_t)status.MPI_TAG) {
+				case TAG_STOP:
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					running = 0;
+					my_log(config, "Stopping");
+					break;
+
+				case TAG_SIMILARITY_DISTANCES:
+					config->distances = malloc(config->num_symbols*config->num_symbols*sizeof(float));
+					MPI_Recv(config->distances, config->num_symbols*config->num_symbols, MPI_FLOAT, RANK_MAIN_PROCESS, TAG_SIMILARITY_DISTANCES, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+					break;
+
+				case TAG_STORAGE_LINE_INDEX: {
+
+					int line_index;
+					MPI_Recv(&line_index, 1, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+					MPI_Recv(&data[line_index*(config->sax_word_count)], config->sax_word_count, MPI_INT, status.MPI_SOURCE, TAG_STORAGE_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+			        line_count++;
+
+					my_log(config, "Storage data received; line: %d line_count: %d", line_index, line_count);
+
+			        if (LOG_LEVEL == LOG_LEVEL_DEBUG) {
+			        	my_log(config, "Data");
+			        	for (int i=0; i<config->sax_word_count; i++) {
+			        		printf("%d ", data[line_index*(config->sax_word_count) + i]);
+			        	}
+			        	printf("\n");
+			        }
+
+					break;
+				}
+
+				case TAG_SIMILARITY_PAIR_1: {
+
+					//my_log(config, "start of TAG_SIMILARITY_PAIR_1");
+
+					int line1;
+					int line2;
+
+					MPI_Recv(&line1, 1, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+					MPI_Recv(&line2, 1, MPI_INT, status.MPI_SOURCE, TAG_SIMILARITY_PAIR_2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+					my_log(config, "Pair received: %d & %d from %d", line1, line2, status.MPI_SOURCE);
+
+					if (processed_pairs[line1][line2] == 1) {
+						my_log(config, "The pair already processed");
+					}
+					else {
+						processed_pairs[line1][line2] = 1;
+						processed_pairs[line2][line1] = 1;
+
+						float similarity = sax_sim(&data[line1*(config->sax_word_count)], &data[line2*(config->sax_word_count)], config->elements, config->sax_word_count, config->distances, config->num_symbols);
+
+						my_log(config, "Similarity: %f", similarity);
+
+						similarity_matrix[line1][line2] = similarity;
+						similarity_matrix[line2][line1] = similarity;
+					}
+
+					break;
+				}
+
+				case TAG_WORK_COMPLETE: {
+
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+
+					my_log(config, "Work complete from: %d", status.MPI_SOURCE);
+
+					work_complete_count++;
+					if (work_complete_count>=config->num_hash) {
+						my_log(config, "All hash tables are done; writing and sending work complete to main process");
+
+						my_log(config, "Writing...");
+
+						char name[1000];
+
+						sprintf(name, "similarity_sax_%05d.csv", config->trial);
+
+						my_log(config, "%s", name);
+
+						FILE *fp;
+
+					    fp = fopen(name, "w");
+
+					    fprintf(fp, "HASH_SIZE, LINE_1, LINE_2, SIMILARITY\n");
+
+						for (int i=0; i<config->n; i++) {
+							for (int j=0; j<i; j++) {
+								if (processed_pairs[i][j]) {
+									fprintf(fp, "%d, %d, %d, %f\n", config->size_hash, i, j, similarity_matrix[i][j]);
+								}
+							}
+						}
+
+						fclose(fp);
+
+						MPI_Send(NULL, 0, MPI_INT, RANK_MAIN_PROCESS, TAG_WORK_COMPLETE, MPI_COMM_WORLD);
+				        running = 0;
+					}
+
+
+			        break;
+				}
+
+
+				case TAG_SIMILARITY_WRITE: {
+
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+					break;
+				}
+
+				default:
+
+					my_log(config, "Unexpected message: %d ", status.MPI_TAG);
+
+			}
+
+		}
+		else {
+			// 1 millisecond
+			usleep(1000L);
+			//usleep(1000L * 1000L * 10);
+		}
+
+
+	} // running
+
+	free(data);
+
+}
+
+
+float *sax_normalize(float *stored, int size, float average, float sd)
+{
+
+    float *res;
+    res = (float *)malloc(sizeof(float) * size);
+
+    for (int i = 0; i < size; i++)
+    {
+
+        res[i] = (stored[i] - average) / sd;
+
+    } //for
+
+    return res;
+
+} //normalize
+
+int *sax_preprocess(struct Config *config, float *item)
+{
+
+    int w = config->sax_word_count;
+
+    float *ave;
+    ave = (float *)malloc(sizeof(float) * w);
+
+    float sum = 0;
+    int count = 0;
+
+    int ind = 0;
+
+    for (int i = 0; i < w - 1; i++)
+    {
+        //create substring
+        //find average
+        for (int j = 0; j < config->word_length; j++)
+        {
+            sum = sum + item[ind + j];
+        }
+        ave[i] = sum / config->word_length;
+        ind = ind + config->word_length;
+        sum = 0;
+    }
+
+    for (int i = ind; i < config->elements; i++)
+    {
+        sum = sum + item[i];
+        count++;
+    }
+
+    ave[w - 1] = sum / count;
+
+    int *res;
+    res = (int *)malloc(sizeof(int) * w);
+
+
+    for (int k = 0; k < w; k++)
+    {
+        res[k] = config->num_symbols - 1;
+    }
+
+    for (int i = 0; i < w; i++)
+    {
+        //find the symbol
+        for (int j = 0; j < config->num_symbols - 1; j++)
+        {
+            if (config->breakpoints[j] >= ave[i])
+            {
+                res[i] = j;
+                break;
+            }
+        }
+    }
+
+    free(ave);
+
+    return res;
+
+} //preprocess_SAX
+
+
+void sax_worker(struct Config *config) {
+
+	int running=1;
+
+	while (running) {
+
+		int flag;
+		MPI_Status status;
+
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+
+		if (flag) {
+			if (LOG_LEVEL==LOG_LEVEL_TRACE) {
+				my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+			}
+
+			switch((tag_t)status.MPI_TAG) {
+				case TAG_STOP:
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					running = 0;
+					my_log(config, "Stopping");
+					break;
+
+					// main process sent us the hash indexes
+				case TAG_WORKER_HASH:
+					config->hash = malloc(config->num_hash*sizeof(int));
+					MPI_Recv(config->hash, config->num_hash, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_HASH, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+					log_hash(config);
+
+					config->breakpoints = malloc(sizeof(float) * config->num_symbols - 1);
+					MPI_Recv(config->breakpoints, config->num_symbols - 1, MPI_FLOAT, RANK_MAIN_PROCESS, TAG_WORKER_BREAKPOINTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+					MPI_Send(NULL, 0, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_AVAILABLE, MPI_COMM_WORLD);
+					break;
+
+					// main process sent us a data line (line number [index], followed by the data)
+				case TAG_WORKER_LINE_INDEX: {
+
+					int line_index;
+					float *data = (float *) malloc(config->elements * sizeof(float));
+
+					MPI_Recv(&line_index, 1, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_LINE_INDEX, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+					MPI_Recv(data, config->elements, MPI_FLOAT, RANK_MAIN_PROCESS, TAG_WORKER_LINE_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+			        if (LOG_LEVEL == LOG_LEVEL_DEBUG) {
+			        	my_log(config, "Data");
+			        	for (int i=0; i<config->elements; i++) {
+			        		printf("%f ", data[i]);
+			        	}
+			        	printf("\n");
+			        }
+
+			        float *normalized = sax_normalize(data, config->elements, config->average, config->sd);
+
+			        my_log(config, "0");
+
+				if (LOG_LEVEL >= LOG_LEVEL_DEBUG) {
+					my_log(config, "Normalized");
+					for (int i = 0; i < config->elements; i++) {
+						printf("%f ", normalized[i]);
+					}
+					printf("\n");
+				}
+
+			        int *preprocessed = sax_preprocess(config, normalized);
+
+			        MPI_Send(&line_index, 1, MPI_INT, RANK_SIMILARITY, TAG_STORAGE_LINE_INDEX, MPI_COMM_WORLD);
+
+			        my_log(config, "1");
+
+			        MPI_Ssend(preprocessed, config->sax_word_count, MPI_INT, RANK_SIMILARITY, TAG_STORAGE_DATA, MPI_COMM_WORLD);
+
+			        my_log(config, "2");
+
+			        // calculate the hash codes and send them to the hash table
+
+			        for (int hash_table_index=0; hash_table_index<config->num_hash; hash_table_index++) {
+
+			        	int hash_code[config->size_hash];
+
+			        	// config->hash contains starts of substrings. Here we build the substrings of the pre-porcessed data
+
+			        	int substring_start = config->hash[hash_table_index];
+
+			        	for (int i=0; i<config->size_hash; i++) {
+			        		hash_code[i] = preprocessed[substring_start + i];
+			        	}
+
+			        	MPI_Send(&line_index, 1, MPI_INT, RANK_HASH_TABLE+hash_table_index, TAG_HASHTABLE_LINE_INDEX, MPI_COMM_WORLD);
+			        	MPI_Send(&hash_code, config->size_hash, MPI_INT, RANK_HASH_TABLE+hash_table_index, TAG_HASHTABLE_LINE_DATA, MPI_COMM_WORLD);
+			        }
+
+			        my_log(config, "3");
+
+					MPI_Send(NULL, 0, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_AVAILABLE, MPI_COMM_WORLD);
+
+					my_log(config, "4");
+
+					free(data);
+					free(preprocessed);
+					free(normalized);
+
+			        break;
+				}
+
+				case TAG_WORK_COMPLETE: {
+
+					my_log(config, "Work complete");
+
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					running = 0;
+
+			        for (int hash_table_index=0; hash_table_index<config->num_hash; hash_table_index++) {
+			        	MPI_Send(NULL, 0, MPI_INT, RANK_HASH_TABLE+hash_table_index, TAG_WORK_COMPLETE, MPI_COMM_WORLD);
+			        }
+
+			        break;
+				}
+
+				default:
+					my_log(config, "Unexpected message: %d ", status.MPI_TAG);
+
+			}
+
+		}
+		else {
+			usleep(1000L);
+		}
+
+
+	}
+
+}
+
+
 void process_requests(struct Config *config) {
 
 	int running=1;
@@ -1356,18 +1798,20 @@ int main(int argc, char **argv) {
     		main_process_fn(&config);
     		break;
 
-/*
-    	case RANK_STORAGE:
-    		config.process_name = "Storage";
-    		my_log(&config, "Start");
-    		abc_worker_storage(&config);
-    		break;
-*/
+
 
     	case RANK_SIMILARITY:
     		config.process_name = "Similarity";
     		my_log(&config, "Start");
-    		abc_worker_similarity(&config);
+    		switch(config.flag){
+    			case METHOD_ABC:
+    				abc_worker_similarity(&config);
+    				break;
+    			case METHOD_SAX:
+    				sax_worker_similarity(&config);
+    				break;
+
+    		}
     		break;
 
     	default:
@@ -1377,6 +1821,7 @@ int main(int argc, char **argv) {
     			sprintf(config.process_name, "Hash table %d", hash_table_index);
     			my_log(&config, "Start");
     			// do hash table
+    			//same for ABC and SAX
     			abc_worker_hashtable(&config);
     		}
     		else {
@@ -1386,7 +1831,15 @@ int main(int argc, char **argv) {
 
     			my_log(&config, "Start");
 
-    			abc_worker(&config);
+        		switch(config.flag){
+        			case METHOD_ABC:
+        				abc_worker(&config);
+        				break;
+        			case METHOD_SAX:
+        				sax_worker(&config);
+        				break;
+
+        		}
     		}
 
     		break;
