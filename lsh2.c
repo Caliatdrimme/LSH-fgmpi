@@ -20,12 +20,13 @@
 typedef enum {
 	TAG_WORKER_HASH,
 	TAG_WORKER_BREAKPOINTS,
+	TAG_WORKER_PERMUTATIONS,
 	TAG_WORKER_AVAILABLE,
 	TAG_WORKER_LINE_INDEX,
 	TAG_WORKER_LINE_DATA,
 	TAG_STORAGE_LINE_INDEX,
 	TAG_STORAGE_DATA,
-	TAG_HASHTABLE_LINE_INDEX,
+	TAG_HASHTABLE_LINE_INDEX, // 8
 	TAG_HASHTABLE_LINE_DATA,
 	TAG_SIMILARITY_PAIR_1,
 	TAG_SIMILARITY_PAIR_2,
@@ -83,6 +84,9 @@ struct Config {
     int worker_count;
 
     char* process_name;
+
+    int ssh_width;
+    int ssh_num_shingles;
 };
 
 void freeConfig(struct Config *config) {
@@ -163,6 +167,10 @@ void init_config(struct Config *config, char **argv) {
 
 	config->sax_word_count = config->elements / config->word_length;
 
+	config->ssh_num_shingles = pow(2, config->num_symbols);
+
+	config->ssh_width = config->ssh_num_shingles /2;
+
 }
 
 void print_config(struct Config *config) {
@@ -182,21 +190,44 @@ void print_config(struct Config *config) {
 	printf("14. filename: %s\n", config->filename);
 }
 
+guint g_array_hash(gconstpointer  v) {
 
-void receive_worker_data(struct Config *config, float *data) {
+	int length = *(int *)v;
 
-}
-
-void send_worker_data(struct Config *config, float *data) {
-	// MPI_Send(data, config->elements, MPI_Float, dest, tag, MPI_COMM_WORLD);
-	receive_worker_data(config, data);
-}
-
-void process_data_window(struct Config *config) {
-	for (int line=0; line<config->file_data.line_count; line++) {
-		send_worker_data(config, &(config->file_data.data[line*config->elements + config->start]));
+	int hash = 17;
+	int *position = (int *)v;
+	position ++;
+	for (int i = 0; i < length; i++) {
+		int value = *position++;
+	    hash = hash * 31 + value;
 	}
+	return hash;
 }
+
+gboolean g_array_equal(gconstpointer a, gconstpointer b) {
+
+	int *array_a = (int *)a;
+	int *array_b = (int *)b;
+
+	int a_length = *array_a;
+	int b_length = *array_b;
+
+	if (a_length!=b_length) {
+		return FALSE;
+	}
+
+	array_a++;
+	array_b++;
+
+	for (int i=0; i<a_length; i++) {
+		if (*array_a++ != *array_b++) {
+			return FALSE;
+		}
+	}
+
+	return TRUE;
+}
+
 
 int *abc_preprocess(float *item, int elements, float average)
 {
@@ -220,89 +251,7 @@ int *abc_preprocess(float *item, int elements, float average)
     return data;
 } //preprocess_ABC
 
-
-struct ABC_data_t {
-	int line_index;
-	int *data;
-};
-
-void process_requests(struct Config *config);
-
-
-void worker_fn2(struct Config *config) {
-
-	my_log(config, "worker_fn2");
-
-	process_requests(config);
-
-/*
-	int running = 1;
-
-	int cmd;
-
-    int cmd_worker_available = CMD_WORKER_AVAILABLE;
-
-	while (running) {
-		my_log(config, "Receiving...");
-		MPI_Recv(&cmd, 1, MPI_INT, RANK_MAIN_PROCESS, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-		switch(cmd) {
-
-		case CMD_STOP:
-				my_log(config, "Cmd stop");
-				running = 0;
-				break;
-
-		case CMD_CONFIG_HASH:
-			    my_log(config, "Cmd config hash");
-				config->hash = malloc(config->num_hash*sizeof(int));
-			    MPI_Recv(config->hash, config->num_hash, MPI_INT, RANK_MAIN_PROCESS, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-			    logHash(config);
-
-			    MPI_Send(&cmd_worker_available, 1, MPI_INT, RANK_MAIN_PROCESS, 0, MPI_COMM_WORLD);
-			    break;
-
-		case CMD_WORKER_DATA:
-
-				my_log(config, "Cmd worker data");
-				float *data = (float *)malloc(config->elements * sizeof(float));
-
-		        MPI_Recv(data, config->elements, MPI_FLOAT, RANK_MAIN_PROCESS, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-		        if (LOG_LEVEL == LOG_LEVEL_DEBUG) {
-		        	my_log(config, "Data");
-		        	for (int i=0; i<config->elements; i++) {
-		        		printf("%f ", data[i]);
-		        	}
-		        	printf("\n");
-		        }
-
-		        //struct ABC_data_t abc_data;
-		        //abc_data.line_index
-
-		        preprocess_ABC(data, config->elements, config->average);
-
-		        int cmd_abc_store = CMD_ABC_STORE;
-
-		        MPI_Send(&cmd_abc_store, 1, MPI_INT, RANK_STORAGE, 0, MPI_COMM_WORLD);
-
-
-		    	MPI_Send(&cmd_worker_available, 1, MPI_INT, RANK_MAIN_PROCESS, 0, MPI_COMM_WORLD);
-				break;
-
-		default:
-			my_log(config, "Unknown command: %d", cmd);
-
-
-		}
-
-	}
-*/
-
-}
-
 // returns 1, if success; 0 if failure
-
 int read_file(struct Config *config) {
 
 	// the file is a matrix WxH of floats separated by space characters. We assume the file is always valid, i.e.
@@ -376,8 +325,6 @@ int read_file(struct Config *config) {
     return 1;
 } // read_file
 
-/******* HASH *********/
-
 int cmpfunc(const void *a, const void *b)
 {
     return (*(int *)a - *(int *)b);
@@ -421,34 +368,29 @@ int *random_indexes(int n, int elements, int size_hash)
 
 } //random_indexes
 
-/*
-float *create_random_matrix(int m, int n, int k)
+float *ssh_create_random_matrix(struct Config *config)
 {
-
-    //return array of size n
-    //holds random indexes between 0 and elements
 
     //over all rows
     srand(time(NULL));
     float *res;
-    res = (float *)malloc(sizeof(float) * m * n);
+    res = (float *)malloc(sizeof(float) * config->num_hash * config->ssh_width);
 
-    for (int j = 0; j < m; j++)
+    for (int j = 0; j < config->num_hash; j++)
     {
-        for (int i = 0; i < n; i++)
+        for (int i = 0; i < config->ssh_width; i++)
         {
 
-            *(res + j * m + i) = k * ((float)rand() / (float)RAND_MAX);
+            *(res + j * config->ssh_width + i) = config->ssh_num_shingles * ((float)rand() / (float)RAND_MAX);
 
             //printf("row %d column %d value %f\n", j, i, *(res + j*m + i));
-
         } //for generating random indexes for one row
     }
 
     return res;
 } //create_random_matrix
 
-float *random_vector(int size)
+float *ssh_random_vector(int size)
 {
     //return a random vector of size
     srand(time(NULL));
@@ -467,68 +409,458 @@ float *random_vector(int size)
 
 } //random_vector
 
-float *create_breakpoints(int num_symbols)
+void ssh_worker_hashtable(struct Config *config) {
+
+	GHashTable* hash = g_hash_table_new(g_array_hash, g_array_equal);
+
+	int running=1;
+
+	int work_complete_count=0;
+
+	while (running) {
+
+		int flag;
+		MPI_Status status;
+
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+
+		if (flag) {
+			if (LOG_LEVEL==LOG_LEVEL_TRACE) {
+				my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+			}
+
+			switch((tag_t)status.MPI_TAG) {
+				case TAG_STOP:
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					running = 0;
+					my_log(config, "Stopping");
+					break;
+
+				case TAG_HASHTABLE_LINE_INDEX: {
+
+					int line_index;
+					MPI_Recv(&line_index, 1, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+					my_log(config, "Received line index: %d from %d", line_index, status.MPI_SOURCE);
+
+					int *data = malloc(sizeof(int) * 2);
+
+					*data = 1;
+
+					MPI_Recv(&data[1], 1, MPI_INT, status.MPI_SOURCE, TAG_HASHTABLE_LINE_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+					my_log(config, "Hash code data received; line: %d ", line_index);
+
+			        if (LOG_LEVEL == LOG_LEVEL_DEBUG) {
+			        	my_log(config, "Data");
+			        	for (int i=0; i<2; i++) {
+			        		printf("%d ", data[i]);
+			        	}
+			        	printf("\n");
+			        }
+
+			        GSList *list = g_hash_table_lookup(hash, data);
+
+			        if (list!=NULL) {
+			        	GSList *element = list;
+			        	while (element != NULL) {
+			        		long value = (long)element->data;
+
+			        		int value_int = (int) value;
+
+			        		MPI_Send(&line_index, 1, MPI_INT, RANK_SIMILARITY, TAG_SIMILARITY_PAIR_1, MPI_COMM_WORLD);
+			        		MPI_Send(&value_int, 1, MPI_INT, RANK_SIMILARITY, TAG_SIMILARITY_PAIR_2, MPI_COMM_WORLD);
+
+			        		element = element->next;
+			        	}
+			        }
+
+			        long li = line_index;
+			        list = g_slist_prepend(list, (gpointer)li);
+
+		        	g_hash_table_insert(hash, data, list);
+
+					break;
+				}
+
+				case TAG_WORK_COMPLETE: {
+
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+
+					my_log(config, "Work complete from: %d", status.MPI_SOURCE);
+
+					work_complete_count++;
+					if (work_complete_count>=config->worker_count) {
+						my_log(config, "All workers are done; sending work complete to similarity");
+				        MPI_Send(NULL, 0, MPI_INT, RANK_SIMILARITY, TAG_WORK_COMPLETE, MPI_COMM_WORLD);
+				        running = 0;
+					}
+
+
+			        break;
+				}
+
+				default:
+
+					my_log(config, "Unexpected message: %d ", status.MPI_TAG);
+
+			}
+
+		}
+		else {
+			usleep(1000L);
+		}
+
+
+	} // running
+
+
+} // ssh_worker_hashtable
+
+//calculates dot product of two vectors
+float dot(float *vector, float *data, int size_hash)
 {
 
-    //from 3 to 10 symbols
-    float breakpoints[8][9] = {{-0.43, 0.43, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-                               {-0.67, 0, 0.67, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-                               {-0.84, -0.25, 0.25, 0.84, 0.0, 0.0, 0.0, 0.0, 0.0},
-                               {-0.97, -0.43, 0, 0.43, 0.97, 0.0, 0.0, 0.0, 0.0},
-                               {-1.07, -0.57, -0.18, 0.18, 0.57, 1.07, 0.0, 0.0, 0.0},
-                               {-1.15, -0.67, -0.32, 0, 0.32, 0.67, 1.15, 0.0, 0.0},
-                               {-1.22, -0.76, -0.43, -0.14, 0.14, 0.43, 0.76, 1.22, 0.0},
-                               {-1.28, -0.84, -0.52, -0.25, 0, 0.25, 0.52, 0.84, 1.28}};
+    float res = 0;
 
-    //return array of size num_symbols-1
-    //holds breakpoints as values
-    //to have equal areas under normal curve
-
-    float *breakpoints_sent;
-    breakpoints_sent = (float *)malloc(sizeof(float) * num_symbols - 1);
-
-    for (int i = 0; i < num_symbols - 1; i++)
+    for (int i = 0; i < size_hash; i++)
     {
-        breakpoints_sent[i] = breakpoints[num_symbols - 3][i];
+
+        res = res + vector[i] * data[i];
     }
 
-    return breakpoints_sent;
+    return res;
 
-} //create_breakpoints
+} //dot product
 
-float *create_distances(int num_symbols, float *breakpoints)
+//turns float data vector to a smaller binary vector representing the signs of the
+//dot product projections of subsequences with the hash vector
+int *sketch(float *data, float *vector, int elements, int step_hash, int size_hash, int size_sketched)
 {
-    //return num_symbolsXnum_symbols array that holds distances between symbols
-    //under the normal curve
 
-    float *distances = (float *)malloc(num_symbols * num_symbols * sizeof(float));
+    int *res;
+    res = (int *)malloc(sizeof(int) * size_sketched);
 
-    for (int i = 0; i < num_symbols; i++)
+    float *sub;
+    sub = (float *)malloc(sizeof(float) * size_hash);
+
+    int ind = 0;
+
+    for (int i = 0; i < size_sketched; i++)
     {
-        for (int j = 0; j < num_symbols; j++)
+
+        for (int j = 0; j < size_hash; j++)
         {
-            if ((abs(i - j)) <= 1)
-            {
-                *(distances + i * num_symbols + j) = 0;
-            } //if
-
-            else
-            {
-
-                int mx = MAX(i, j) - 1;
-                int mn = MIN(i, j);
-
-                *(distances + i * num_symbols + j) = breakpoints[mx] - breakpoints[mn];
-
-            } //else
+            sub[j] = data[ind + j];
         }
+
+        if (dot(vector, sub, size_hash) >= 0)
+        {
+            res[i] = 1;
+        } //if
+        else
+        {
+            res[i] = 0;
+        }
+
+        ind = ind + step_hash;
     }
 
-    return distances;
+    free(sub);
+    return res;
 
-} //create_distances
+} //sketch
 
-*/
+//reads the array as a binary number
+int to_bin(int *data, int num_symbols)
+{
+
+    int res = 0;
+
+    int unit = 1;
+
+    for (int i = num_symbols - 1; i >= 0; i--)
+    {
+
+        res = res + unit * data[i];
+
+        unit = unit * 2;
+    }
+
+    return res;
+
+} //to binary index
+
+//calculates number of shingles repeated in the main sketched string
+//returns array of int where the ints are the counts and the shingles are the binary form of the index
+int *shingle(int n_shingles, int size_shingled, int size_sketched, int num_symbols, int overlap, int *sketched)
+{
+
+    int *res;
+    res = (int *)malloc(sizeof(int) * size_shingled);
+
+    int *sub;
+    sub = (int *)malloc(sizeof(int) * num_symbols);
+
+    //fill with zeros
+    for (int i = 0; i < size_shingled; i++)
+    {
+        res[i] = 0;
+    }
+
+    int ind = 0;
+
+    for (int i = 0; i < n_shingles; i++)
+    {
+
+        for (int k = 0; k < num_symbols; k++)
+        {
+            sub[k] = sketched[ind + k];
+        }
+
+        int index = to_bin(sub, num_symbols);
+
+        res[index]++;
+
+        ind = ind + overlap;
+    }
+    free(sub);
+    return res;
+
+} //shingle
+
+void ssh_worker(struct Config *config) {
+
+	int running=1;
+
+	float *vector = malloc(config->size_hash*sizeof(float));
+
+	while (running) {
+
+		int flag;
+		MPI_Status status;
+
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+
+		if (flag) {
+			if (LOG_LEVEL==LOG_LEVEL_TRACE) {
+				my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+			}
+
+			switch((tag_t)status.MPI_TAG) {
+				case TAG_STOP:
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					running = 0;
+					my_log(config, "Stopping");
+					break;
+
+					// main process sent us the hash indexes
+				case TAG_WORKER_HASH:
+
+					MPI_Recv(vector, config->size_hash, MPI_FLOAT, RANK_MAIN_PROCESS, TAG_WORKER_HASH, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+					//log_hash(config);
+
+					float *matrix = malloc(sizeof(float) * config->num_hash * config->ssh_width);
+					MPI_Recv(matrix, config->num_hash * config->ssh_width, MPI_FLOAT, RANK_MAIN_PROCESS, TAG_WORKER_PERMUTATIONS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+					MPI_Send(NULL, 0, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_AVAILABLE, MPI_COMM_WORLD);
+					break;
+
+					// main process sent us a data line (line number [index], followed by the data)
+				case TAG_WORKER_LINE_INDEX: {
+
+					int line_index;
+					float *data = (float *) malloc(config->elements * sizeof(float));
+
+					MPI_Recv(&line_index, 1, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_LINE_INDEX, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+					MPI_Recv(data, config->elements, MPI_FLOAT, RANK_MAIN_PROCESS, TAG_WORKER_LINE_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+			        if (LOG_LEVEL == LOG_LEVEL_DEBUG) {
+			        	my_log(config, "Data");
+			        	for (int i=0; i<config->elements; i++) {
+			        		printf("%f ", data[i]);
+			        	}
+			        	printf("\n");
+			        }
+
+			        //sketch
+
+			        int size_sketched = (config->elements - config->size_hash) / config->step_hash + 1;
+
+			        int *sketched = sketch(data, vector, config->elements, config->step_hash, config->size_hash, size_sketched);
+
+			        //shingle
+
+			        int n_shingles = (size_sketched - config->num_symbols) / config->word_length + 1;
+
+			        int *shingled = shingle(n_shingles, config->ssh_num_shingles, size_sketched, config->num_symbols, config->word_length, sketched);
+
+			        MPI_Ssend(&line_index, 1, MPI_INT, RANK_SIMILARITY, TAG_STORAGE_LINE_INDEX, MPI_COMM_WORLD);
+			        MPI_Ssend(shingled, config->ssh_num_shingles, MPI_INT, RANK_SIMILARITY, TAG_STORAGE_DATA, MPI_COMM_WORLD);
+
+			        my_log(config, "2");
+
+			        //hash
+
+			        for (int i = 0; i < config->num_hash; i++)
+			        {
+
+			            for (int j = 0; j < config->ssh_width; j++)
+			            {
+			                int ind = floor(*(matrix + i * config->ssh_width + j));
+
+			                my_log(config, "after ind: %d", ind);
+
+			                if (*(matrix + i * config->ssh_width + j) - ind < (float)shingled[ind] / (float)n_shingles)
+			                {
+			                	MPI_Send(&line_index, 1, MPI_INT, RANK_HASH_TABLE+i, TAG_HASHTABLE_LINE_INDEX, MPI_COMM_WORLD);
+			                    //send the hash code j and item index to appropriate hashtable node i
+			                    MPI_Send(&j, 1, MPI_INT, RANK_HASH_TABLE+i, TAG_HASHTABLE_LINE_DATA, MPI_COMM_WORLD);
+
+			                    //printf("ssh for %d sending hash value %d for hash %d\n", rank, j, i);
+			                    //if did not find the hash - not sending anything
+			                    break;
+			                }
+			            }
+
+			        } //for each hash
+
+			        my_log(config, "3");
+
+					MPI_Send(NULL, 0, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_AVAILABLE, MPI_COMM_WORLD);
+
+					my_log(config, "4");
+
+					free(data);
+					free(shingled);
+					free(sketched);
+
+			        break;
+				}
+
+				case TAG_WORK_COMPLETE: {
+
+					my_log(config, "Work complete");
+
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					running = 0;
+
+			        for (int hash_table_index=0; hash_table_index<config->num_hash; hash_table_index++) {
+			        	MPI_Send(NULL, 0, MPI_INT, RANK_HASH_TABLE+hash_table_index, TAG_WORK_COMPLETE, MPI_COMM_WORLD);
+			        }
+
+			        break;
+				}
+
+				default:
+					my_log(config, "Unexpected message: %d ", status.MPI_TAG);
+
+			}
+
+		}
+		else {
+			usleep(1000L);
+		}
+
+
+	}
+
+}
+
+void ssh_main_process(struct Config *config) {
+	my_log(config, "METHOD_SSH");
+
+	float *vector = ssh_random_vector(config->size_hash);
+
+	//log_hash(config);
+
+    for (int i=0; i<config->worker_count; i++) {
+    	MPI_Send(vector, config->size_hash, MPI_FLOAT, config->rank_worker_start+i, TAG_WORKER_HASH, MPI_COMM_WORLD);
+    }
+
+    float *matrix = ssh_create_random_matrix(config);
+
+    for (int i=0; i<config->worker_count; i++) {
+    	MPI_Send(matrix, config->num_hash*config->ssh_width, MPI_FLOAT, config->rank_worker_start+i,TAG_WORKER_PERMUTATIONS, MPI_COMM_WORLD);
+    }
+
+
+
+    int line_index = 0;
+
+    while (line_index < config->file_data.line_count) {
+
+    	MPI_Status mpi_status;
+
+    	my_log(config, "Waiting for a worker");
+
+    	MPI_Recv(NULL, 0, MPI_INT, MPI_ANY_SOURCE, TAG_WORKER_AVAILABLE, MPI_COMM_WORLD, &mpi_status);
+
+    	my_log(config, "Worker available: %d for line: %d", mpi_status.MPI_SOURCE, line_index);
+
+	    float *data = &config->file_data.data[line_index*config->file_data.column_count + config->start];
+
+	    MPI_Send(&line_index, 1, MPI_INT, mpi_status.MPI_SOURCE, TAG_WORKER_LINE_INDEX, MPI_COMM_WORLD);
+	    MPI_Send(data, config->elements, MPI_FLOAT, mpi_status.MPI_SOURCE, TAG_WORKER_LINE_DATA, MPI_COMM_WORLD);
+
+	    line_index++;
+
+    }
+
+    my_log(config, "All data sent to workers");
+
+	//usleep(10L*1000L*1000L);
+
+    // tell the workers we are done
+    for (int i=0; i<config->worker_count; i++) {
+    	MPI_Send(NULL, 0, MPI_INT, config->rank_worker_start+i, TAG_WORK_COMPLETE, MPI_COMM_WORLD);
+    }
+
+	int running=1;
+
+	// wait for work complete from similarity
+
+	while (running) {
+
+		int flag;
+		MPI_Status status;
+
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+
+		if (flag) {
+			if (LOG_LEVEL==LOG_LEVEL_TRACE) {
+				my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+			}
+
+			switch((tag_t)status.MPI_TAG) {
+
+				case TAG_WORKER_AVAILABLE: {
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					break;
+				}
+
+				case TAG_WORK_COMPLETE: {
+
+					my_log(config, "Work complete from similarity");
+
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					running = 0;
+
+			        break;
+				}
+
+				default:
+					my_log(config, "Unexpected message: %d ", status.MPI_TAG);
+
+			}
+
+		}
+		else {
+			usleep(1000L);
+		}
+
+	}
+
+}
 
 void abc_main_process(struct Config *config) {
 	my_log(config, "METHOD_ABC");
@@ -798,48 +1130,12 @@ void main_process_fn(struct Config *config) {
     		sax_main_process(config);
     		break;
 
-
+    	case METHOD_SSH:
+    		ssh_main_process(config);
+    		break;
     }
 
 
-}
-
-guint g_array_hash(gconstpointer  v) {
-
-	int length = *(int *)v;
-
-	int hash = 17;
-	int *position = (int *)v;
-	position ++;
-	for (int i = 0; i < length; i++) {
-		int value = *position++;
-	    hash = hash * 31 + value;
-	}
-	return hash;
-}
-
-gboolean g_array_equal(gconstpointer a, gconstpointer b) {
-
-	int *array_a = (int *)a;
-	int *array_b = (int *)b;
-
-	int a_length = *array_a;
-	int b_length = *array_b;
-
-	if (a_length!=b_length) {
-		return FALSE;
-	}
-
-	array_a++;
-	array_b++;
-
-	for (int i=0; i<a_length; i++) {
-		if (*array_a++ != *array_b++) {
-			return FALSE;
-		}
-	}
-
-	return TRUE;
 }
 
 //same for SAX
@@ -848,8 +1144,6 @@ void abc_worker_hashtable(struct Config *config) {
 	GHashTable* hash = g_hash_table_new(g_array_hash, g_array_equal);
 
 	int running=1;
-
-	//char *data = malloc(sizeof(int) * config->size_hash * config->n );
 
 	int work_complete_count=0;
 
@@ -1454,6 +1748,203 @@ void sax_worker_similarity(struct Config *config) {
 
 }
 
+//calculates the similarity by SSH
+float ssh_sim(int *item1, int *item2, int size)
+{
+
+    float res = 0.0;
+    float total = 0.0;
+
+    for (int i = 0; i < size; i++)
+    {
+
+        if (item1[i] > 0)
+        {
+            if (item2[i] > 0)
+            {
+
+                res = res + 1.0;
+            }
+            total = total + 1.0;
+        }
+
+        if (item2[i] > 0)
+        {
+            if (item1[i] == 0)
+            {
+                total = total + 1;
+            }
+        }
+    }
+    return (float)res / total;
+
+} //SSH_sim
+
+
+void ssh_worker_similarity(struct Config *config) {
+
+	int running=1;
+
+	int *data = malloc(sizeof(int) * config->ssh_num_shingles * config->n );
+
+	int line_count = 0;
+
+	int processed_pairs[config->n][config->n];
+
+	for (int i=0; i<config->n; i++) {
+		for (int j=0; j<config->n; j++) {
+			processed_pairs[i][j] = 0;
+		}
+	}
+
+	float similarity_matrix[config->n][config->n];
+
+	int work_complete_count=0;
+
+	while (running) {
+
+		//my_log(config, "Probing...");
+
+		int flag;
+		MPI_Status status;
+
+		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+
+		if (flag) {
+			if (LOG_LEVEL==LOG_LEVEL_TRACE) {
+				my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
+			}
+
+			switch((tag_t)status.MPI_TAG) {
+				case TAG_STOP:
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					running = 0;
+					my_log(config, "Stopping");
+					break;
+
+				case TAG_STORAGE_LINE_INDEX: {
+
+					int line_index;
+					MPI_Recv(&line_index, 1, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+					MPI_Recv(&data[line_index*(config->ssh_num_shingles)], config->ssh_num_shingles, MPI_INT, status.MPI_SOURCE, TAG_STORAGE_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+			        line_count++;
+
+					my_log(config, "Storage data received; line: %d line_count: %d", line_index, line_count);
+
+			        if (LOG_LEVEL == LOG_LEVEL_DEBUG) {
+			        	my_log(config, "Data");
+			        	for (int i=0; i<config->ssh_num_shingles; i++) {
+			        		printf("%d ", data[line_index*(config->ssh_num_shingles) + i]);
+			        	}
+			        	printf("\n");
+			        }
+
+					break;
+				}
+
+				case TAG_SIMILARITY_PAIR_1: {
+
+					//my_log(config, "start of TAG_SIMILARITY_PAIR_1");
+
+					int line1;
+					int line2;
+
+					MPI_Recv(&line1, 1, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+					MPI_Recv(&line2, 1, MPI_INT, status.MPI_SOURCE, TAG_SIMILARITY_PAIR_2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+					my_log(config, "Pair received: %d & %d from %d", line1, line2, status.MPI_SOURCE);
+
+					if (processed_pairs[line1][line2] == 1) {
+						my_log(config, "The pair already processed");
+					}
+					else {
+						processed_pairs[line1][line2] = 1;
+						processed_pairs[line2][line1] = 1;
+
+						float similarity = ssh_sim(&data[line1*(config->ssh_num_shingles)], &data[line2*(config->ssh_num_shingles)], config->ssh_num_shingles);
+						my_log(config, "Similarity: %f", similarity);
+
+						similarity_matrix[line1][line2] = similarity;
+						similarity_matrix[line2][line1] = similarity;
+					}
+
+					break;
+				}
+
+				case TAG_WORK_COMPLETE: {
+
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+
+					my_log(config, "Work complete from: %d", status.MPI_SOURCE);
+
+					work_complete_count++;
+					if (work_complete_count>=config->num_hash) {
+						my_log(config, "All hash tables are done; writing and sending work complete to main process");
+
+						my_log(config, "Writing...");
+
+						char name[1000];
+
+						sprintf(name, "similarity_ssh_%05d.csv", config->trial);
+
+						my_log(config, "%s", name);
+
+						FILE *fp;
+
+					    fp = fopen(name, "w");
+
+					    fprintf(fp, "HASH_SIZE, LINE_1, LINE_2, SIMILARITY\n");
+
+						for (int i=0; i<config->n; i++) {
+							for (int j=0; j<i; j++) {
+								if (processed_pairs[i][j]) {
+									fprintf(fp, "%d, %d, %d, %f\n", config->size_hash, i, j, similarity_matrix[i][j]);
+								}
+							}
+						}
+
+						fclose(fp);
+
+						my_log(config, "Report written");
+
+						MPI_Send(NULL, 0, MPI_INT, RANK_MAIN_PROCESS, TAG_WORK_COMPLETE, MPI_COMM_WORLD);
+				        running = 0;
+					}
+
+
+			        break;
+				}
+
+
+				case TAG_SIMILARITY_WRITE: {
+
+					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+					break;
+				}
+
+				default:
+
+					my_log(config, "Unexpected message: %d ", status.MPI_TAG);
+
+			}
+
+		}
+		else {
+			// 1 millisecond
+			usleep(1000L);
+			//usleep(1000L * 1000L * 10);
+		}
+
+
+	} // running
+
+	free(data);
+
+}
+
 
 float *sax_normalize(float *stored, int size, float average, float sd)
 {
@@ -1670,85 +2161,6 @@ void sax_worker(struct Config *config) {
 }
 
 
-void process_requests(struct Config *config) {
-
-	int running=1;
-
-	while (running) {
-
-		int flag;
-		MPI_Status status;
-
-		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
-
-		if (flag) {
-			if (LOG_LEVEL==LOG_LEVEL_TRACE) {
-				my_log(config, "Request iprobed; source: %d tag: %d", status.MPI_SOURCE, status.MPI_TAG);
-			}
-
-			//int line_index;
-			//float *data = (float *) malloc(config->elements * sizeof(float));
-
-			//char *storage_data_abc = (char *) malloc(config->elements * sizeof(char));
-
-			switch((tag_t)status.MPI_TAG) {
-				case TAG_STOP:
-					MPI_Recv(NULL, 0, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
-					running = 0;
-					my_log(config, "Stopping");
-					break;
-
-/*
-				case TAG_WORKER_HASH:
-					config->hash = malloc(config->num_hash*sizeof(int));
-					MPI_Recv(config->hash, config->num_hash, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_HASH, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-					log_hash(config);
-					MPI_Send(NULL, 0, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_AVAILABLE, MPI_COMM_WORLD);
-					break;
-
-				case TAG_WORKER_LINE_INDEX:
-					MPI_Recv(&line_index, 1, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_LINE_INDEX, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-					MPI_Recv(data, config->elements, MPI_FLOAT, RANK_MAIN_PROCESS, TAG_WORKER_LINE_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-			        if (LOG_LEVEL == LOG_LEVEL_DEBUG) {
-			        	my_log(config, "Data");
-			        	for (int i=0; i<config->elements; i++) {
-			        		printf("%f ", data[i]);
-			        	}
-			        	printf("\n");
-			        }
-
-			        char *preprocessed = preprocess_ABC(data, config->elements, config->average);
-
-			        MPI_Ssend(preprocessed, config->elements, MPI_CHAR, RANK_STORAGE, TAG_STORAGE_DATA, MPI_COMM_WORLD);
-
-					MPI_Send(NULL, 0, MPI_INT, RANK_MAIN_PROCESS, TAG_WORKER_AVAILABLE, MPI_COMM_WORLD);
-
-			        break;
-
-				case TAG_STORAGE_DATA:
-
-					MPI_Recv(storage_data_abc, config->elements, MPI_CHAR, status.MPI_SOURCE, TAG_STORAGE_DATA, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-					my_log(config, "Storage data received");
-
-					break;
-*/
-
-				default:
-					my_log(config, "Unexpected message: %d ", status.MPI_TAG);
-
-			}
-
-		}
-		else {
-			usleep(1000L);
-		}
-
-
-	}
-
-}
-
 
 int main(int argc, char **argv) {
 
@@ -1803,12 +2215,15 @@ int main(int argc, char **argv) {
     	case RANK_SIMILARITY:
     		config.process_name = "Similarity";
     		my_log(&config, "Start");
-    		switch(config.flag){
+    		switch(config.flag) {
     			case METHOD_ABC:
     				abc_worker_similarity(&config);
     				break;
     			case METHOD_SAX:
     				sax_worker_similarity(&config);
+    				break;
+    			case METHOD_SSH:
+    				ssh_worker_similarity(&config);
     				break;
 
     		}
@@ -1821,8 +2236,13 @@ int main(int argc, char **argv) {
     			sprintf(config.process_name, "Hash table %d", hash_table_index);
     			my_log(&config, "Start");
     			// do hash table
-    			//same for ABC and SAX
-    			abc_worker_hashtable(&config);
+    			if (config.flag==2){
+    				ssh_worker_hashtable(&config);
+
+    			} else {
+    				//same for ABC and SAX
+    				abc_worker_hashtable(&config);
+    			}
     		}
     		else {
 
@@ -1837,6 +2257,10 @@ int main(int argc, char **argv) {
         				break;
         			case METHOD_SAX:
         				sax_worker(&config);
+        				break;
+
+        			case METHOD_SSH:
+        				ssh_worker(&config);
         				break;
 
         		}
