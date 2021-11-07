@@ -2,7 +2,16 @@
 
 to run
 
-mpiexec -nfg n_subprocess -n n_process ./lsh [params]
+mpiexec -nfg n_subprocess -n n_process ./lsh2 [params]
+
+to compile
+
+mpicc lsh2.c -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -o lsh2 -lglib-2.0 -lm
+
+
+
+
+TODO: update the readme and git repo, folders, merge to main branch
 
 //ABC
 mpiexec -nfg 1 -n 12 ./lsh 1 0 0 6 3 3 1 2 1 2.0 0.1 0.1 3 data.txt
