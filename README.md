@@ -8,7 +8,23 @@ to compile
 
 mpicc lsh2.c -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -o lsh2 -lglib-2.0 -lm
 
+parse.py: takes files in data folder, collects stats, normalizes for ssh and sax, produces turned files for each flight and each variable - this goes into processed folder
+res-stats.txt: contains lengths of flights, summary stats on all variables and start and end time steps of all phases
 
+lsh2.c: main code
+
+experiment.py: code to run experiments (data files codes to be taken from the processed folder)
+to run: python3 experiment.py param (param is index of experiment)
+
+produces into main directory:
+log.txt gets rewritten with each trial (log of run of c code)
+reslog.txt contains times and commands ran with trial numbers
+the c code produces similarity_method_trial.csv files
+
+need to move resulting files into results for graph production
+
+eval.py: code for producing graphs/results into final folder
+- for the files in the results folder
 
 
 TODO: update the readme and git repo, folders, merge to main branch
